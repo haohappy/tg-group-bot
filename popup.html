@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TG Group Bot</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🤖 TG Group Bot</h1>
+      <div id="status" class="status">检查连接中...</div>
+    </header>
+
+    <!-- Tab Navigation -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="search">🔍 搜群</button>
+      <button class="tab" data-tab="groups">📋 群列表</button>
+      <button class="tab" data-tab="message">💬 发消息</button>
+    </nav>
+
+    <!-- Search Tab -->
+    <section id="search-tab" class="tab-content active">
+      <div class="input-group">
+        <input type="text" id="keyword" placeholder="输入关键词搜索群组...">
+        <button id="search-btn" class="btn primary">搜索</button>
+      </div>
+      <div id="search-results" class="results-list"></div>
+    </section>
+
+    <!-- Groups Tab -->
+    <section id="groups-tab" class="tab-content">
+      <div class="toolbar">
+        <span id="group-count">已保存: 0 个群</span>
+        <button id="clear-groups" class="btn small">清空</button>
+      </div>
+      <div id="saved-groups" class="results-list"></div>
+    </section>
+
+    <!-- Message Tab -->
+    <section id="message-tab" class="tab-content">
+      <div class="input-group">
+        <textarea id="message-content" placeholder="输入要发送的消息内容..."></textarea>
+      </div>
+      <div class="settings">
+        <label>
+          发送间隔: <input type="number" id="interval" value="30" min="10" max="300"> 秒
+        </label>
+      </div>
+      <div class="actions">
+        <button id="send-btn" class="btn primary">开始发送</button>
+        <button id="stop-btn" class="btn danger" disabled>停止</button>
+      </div>
+      <div id="send-log" class="log"></div>
+    </section>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

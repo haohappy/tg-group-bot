@@ -1,0 +1,13 @@
+/* TG Group Bot - Content Styles */
+/* Injected into Telegram Web */
+
+/* Highlight for bot interactions (optional) */
+.tg-bot-highlight {
+  outline: 2px solid #0088cc !important;
+  outline-offset: 2px;
+}
+
+.tg-bot-processing {
+  opacity: 0.7;
+  pointer-events: none;
+}
