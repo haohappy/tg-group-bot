@@ -1,76 +1,93 @@
-# TG Group Bot 🤖
+# 📣 TG Marketing
 
-A Chrome extension for Telegram group marketing. Search for groups, join them, and send promotional messages - all from a convenient popup interface.
+Telegram 群组营销自动化工具 - Chrome Extension + AI 自动化
 
-## Features
+## ✨ 功能
 
-- 🔍 **Search Groups** - Find Telegram groups by keyword
-- 📋 **Save Groups** - Build a list of target groups
-- ➕ **Auto Join** - Join groups with one click
-- 💬 **Send Messages** - Broadcast messages to multiple groups
-- ⏱️ **Rate Limiting** - Configurable delay between messages
+### Campaign 管理系统
+- 📋 创建、编辑、删除营销活动
+- 🔑 多关键词搜索群组
+- 💬 自定义广告内容 (支持 Emoji)
+- 🖼️ 附带图片发送
+- ⚙️ 可配置发送间隔和最大群数
+- 📊 实时进度追踪和统计
 
-## Installation
+### 自动化执行
+- 🔍 **搜索**: 按关键词搜索相关群组
+- 🚪 **加入**: 自动加入找到的群
+- 💬 **发送**: 批量发送广告消息
+- ⏸️ **控制**: 暂停/继续/停止
 
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/haohappy/tg-group-bot.git
-   ```
+## 📥 安装
 
-2. Open Chrome and go to `chrome://extensions/`
+1. 下载 [最新 Release](https://github.com/haohappy/tg-group-bot/releases/latest)
+2. 解压 zip 文件
+3. 打开 Chrome，进入 `chrome://extensions`
+4. 开启「开发者模式」
+5. 点击「加载已解压的扩展程序」
+6. 选择解压后的文件夹
 
-3. Enable **Developer mode** (toggle in top right)
+## 🚀 使用方法
 
-4. Click **Load unpacked** and select the `tg-group-bot` folder
+### 方式一：手动操作 Extension
 
-5. The extension icon will appear in your toolbar
+1. 打开 [Telegram Web](https://web.telegram.org/k/)
+2. 点击浏览器工具栏的 Extension 图标
+3. 在「新建」标签页创建 Campaign
+4. 点击「保存并启动」
 
-## Usage
+### 方式二：AI 自动化 (OpenClaw)
 
-1. Open [Telegram Web](https://web.telegram.org/k/) and log in
+如果你使用 [OpenClaw](https://openclaw.ai)，AI 助手可以完全自主执行：
 
-2. Click the TG Group Bot extension icon
-
-3. **Search Tab**: Enter keywords to find groups
-   - Click "保存" to add groups to your list
-
-4. **Groups Tab**: View saved groups
-   - Click "加入" to join a group
-   - Click "删除" to remove from list
-
-5. **Message Tab**: Send messages to joined groups
-   - Enter your message
-   - Set the interval between messages (default: 30 seconds)
-   - Click "开始发送" to start broadcasting
-
-## ⚠️ Disclaimer
-
-This tool is for educational purposes. Using automation for spam or unsolicited marketing may violate Telegram's Terms of Service and could result in account suspension. Use responsibly.
-
-## Development
-
-```bash
-# Install dependencies (only needed for icon generation)
-npm install
-
-# The extension itself requires no build step
-# Just load the folder in Chrome as an unpacked extension
+```
+告诉 AI: "运行 Campaign，关键词 xxx，广告内容 xxx"
 ```
 
-## Files
+AI 会自动：
+- 启动浏览器
+- 打开 Telegram Web
+- 执行搜索 → 加入 → 发送
+- 报告结果
+
+## 📁 项目结构
 
 ```
 tg-group-bot/
-├── manifest.json      # Extension configuration
-├── popup.html         # Popup UI
-├── popup.css          # Popup styles
-├── popup.js           # Popup logic
-├── content.js         # Telegram Web interaction
-├── content.css        # Content styles
-├── background.js      # Service worker
-└── icons/             # Extension icons
+├── manifest.json      # Extension 配置
+├── popup.html/css/js  # 弹出界面
+├── campaign.js        # Campaign 管理逻辑
+├── content.js         # 注入 Telegram Web 的脚本
+├── background.js      # Service Worker
+├── updater.js         # 自动更新
+├── CLAUDE.md          # AI 工作笔记 (详细技术文档)
+└── icons/             # 图标
 ```
 
-## License
+## ⚠️ 注意事项
+
+- **频率限制**: Telegram 对频繁操作有限制，建议发送间隔 60 秒以上
+- **账号安全**: 过度营销可能导致账号被限制
+- **内容合规**: 请遵守 Telegram 使用条款
+
+## 📖 技术文档
+
+详细的技术实现和代码说明，请查看 [CLAUDE.md](./CLAUDE.md)
+
+## 🔄 更新日志
+
+### v2.0.0 (2026-02-17)
+- 🎉 全新 Campaign 管理系统
+- 📋 活动创建、编辑、删除
+- 🖼️ 图片上传支持
+- 📊 实时进度和统计
+- ⏸️ 暂停/继续/停止控制
+
+### v1.1.0
+- 基础功能：搜索、加入、发送
+- 群组列表管理
+- 自动更新检查
+
+## 📄 License
 
 MIT
