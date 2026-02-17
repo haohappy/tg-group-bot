@@ -33,26 +33,9 @@ class Updater {
         }
       }
       
-      // Fallback: check commits for updates (compare by date)
-      response = await fetch(GITHUB_COMMITS_API);
-      if (response.ok) {
-        const commit = await response.json();
-        const lastCheck = await this.getLastCheckTime();
-        const commitDate = new Date(commit.commit.committer.date).getTime();
-        
-        if (commitDate > lastCheck) {
-          return {
-            hasUpdate: true,
-            currentVersion: this.currentVersion,
-            latestVersion: `${this.currentVersion}+`,
-            downloadUrl: `https://github.com/${GITHUB_REPO}/archive/refs/heads/main.zip`,
-            releaseUrl: `https://github.com/${GITHUB_REPO}`,
-            releaseNotes: `Latest commit: ${commit.commit.message}`,
-            publishedAt: commit.commit.committer.date,
-            isCommitUpdate: true
-          };
-        }
-      }
+      // Fallback: check commits for updates - DISABLED to avoid false positives
+      // Only use GitHub Releases for update detection
+      // (Commit-based updates caused "2.1.0+" false alarms)
       
       return { hasUpdate: false, currentVersion: this.currentVersion };
       
