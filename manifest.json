@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TG Group Bot",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "Telegram Group Marketing Tool - Search, join groups, and send messages",
   "permissions": [
     "storage",

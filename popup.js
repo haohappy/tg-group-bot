@@ -126,9 +126,10 @@ class TGMarketing {
       listEl.innerHTML = `
         <div class="empty-state">
           <p>还没有创建活动</p>
-          <button class="btn primary" onclick="bot.switchTab('create')">➕ 创建第一个活动</button>
+          <button class="btn primary" id="create-first-btn">➕ 创建第一个活动</button>
         </div>
       `;
+      document.getElementById('create-first-btn').addEventListener('click', () => this.switchTab('create'));
       return;
     }
 
