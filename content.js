@@ -17,7 +17,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
       
     case 'sendMessage':
-      handleSendMessage(request.groupId, request.message).then(sendResponse);
+      handleSendMessage(request.groupId, request.message, request.image).then(sendResponse);
       return true;
       
     case 'getStatus':
@@ -195,15 +195,15 @@ async function handleJoinGroup(groupId) {
   }
 }
 
-// Send message to the currently open chat
-async function handleSendMessage(groupId, message) {
+// Send message to the currently open chat (with optional image)
+async function handleSendMessage(groupId, message, imageBase64) {
   try {
     // If groupId provided, navigate to that chat first
     if (groupId) {
       const groupEl = document.querySelector(`[data-peer-id="${groupId}"]`);
       if (groupEl) {
         groupEl.click();
-        await sleep(1000);
+        await sleep(1500);
       }
     }
 
@@ -216,7 +216,18 @@ async function handleSendMessage(groupId, message) {
       return { error: 'Cannot find message input', success: false };
     }
 
-    // Focus and clear
+    // If we have an image, paste it first
+    if (imageBase64) {
+      try {
+        await pasteImage(imageBase64, messageInput);
+        await sleep(1000);
+      } catch (imgError) {
+        console.error('Image paste failed:', imgError);
+        // Continue without image
+      }
+    }
+
+    // Focus and set the message content
     messageInput.focus();
     await sleep(100);
     
@@ -237,7 +248,16 @@ async function handleSendMessage(groupId, message) {
     
     if (sendBtn) {
       sendBtn.click();
-      await sleep(500);
+      await sleep(1000);
+      
+      // If image was attached, there might be a popup, click send again
+      const popupSendBtn = document.querySelector('.popup-send-photo .btn-primary') ||
+                           document.querySelector('.popup button.btn-primary');
+      if (popupSendBtn) {
+        popupSendBtn.click();
+        await sleep(500);
+      }
+      
       return { success: true };
     }
 
@@ -256,6 +276,41 @@ async function handleSendMessage(groupId, message) {
   } catch (error) {
     console.error('Send error:', error);
     return { error: error.message, success: false };
+  }
+}
+
+// Paste an image into the chat
+async function pasteImage(base64Data, targetElement) {
+  // Convert base64 to blob
+  const response = await fetch(base64Data);
+  const blob = await response.blob();
+  
+  // Create a File from the blob
+  const file = new File([blob], 'image.jpg', { type: blob.type || 'image/jpeg' });
+  
+  // Create a DataTransfer object and add the file
+  const dataTransfer = new DataTransfer();
+  dataTransfer.items.add(file);
+  
+  // Create and dispatch paste event
+  const pasteEvent = new ClipboardEvent('paste', {
+    bubbles: true,
+    cancelable: true,
+    clipboardData: dataTransfer
+  });
+  
+  targetElement.dispatchEvent(pasteEvent);
+  
+  // Alternative: Try using file input
+  const fileInput = document.querySelector('input[type="file"][accept*="image"]');
+  if (fileInput) {
+    try {
+      fileInput.files = dataTransfer.files;
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (e) {
+      // Some browsers don't allow setting files programmatically
+      console.log('File input method not supported');
+    }
   }
 }
 

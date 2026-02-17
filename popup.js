@@ -1,62 +1,24 @@
-// TG Group Bot - Popup Script
+// TG Marketing - Popup Controller
 
-class TGGroupBot {
+class TGMarketing {
   constructor() {
-    this.savedGroups = [];
-    this.keywordTemplates = [];
-    this.messageTemplates = [];
-    this.isSending = false;
-    this.currentTab = null;
+    this.campaignManager = new CampaignManager();
     this.updater = new Updater();
+    this.selectedImages = [];
+    this.editingCampaignId = null;
+    this.viewingCampaignId = null;
     this.init();
   }
 
   async init() {
-    // Show current version
     document.getElementById('version').textContent = `v${this.updater.currentVersion}`;
     
-    await this.loadSavedGroups();
-    await this.loadTemplates();
+    await this.campaignManager.load();
     this.bindEvents();
     await this.checkConnection();
-    this.updateGroupCount();
-    this.renderSavedGroups();
-    this.renderTemplateSelectors();
-    this.renderTemplateList();
-    
-    // Check for updates in background
+    this.renderCampaignsList();
+    this.updateRunningTab();
     this.checkForUpdates();
-  }
-  
-  async checkForUpdates() {
-    try {
-      const result = await this.updater.checkForUpdates();
-      
-      if (result.hasUpdate) {
-        const banner = document.getElementById('update-banner');
-        const newVersionEl = document.getElementById('new-version');
-        const updateBtn = document.getElementById('update-btn');
-        
-        newVersionEl.textContent = result.latestVersion;
-        banner.classList.remove('hidden');
-        
-        updateBtn.addEventListener('click', async () => {
-          updateBtn.textContent = '下载中...';
-          updateBtn.disabled = true;
-          
-          await this.updater.downloadUpdate(result.downloadUrl);
-          
-          updateBtn.textContent = '已下载';
-          
-          // Show install instructions
-          alert('下载完成！\\n\\n安装步骤：\\n1. 解压下载的 zip 文件\\n2. 覆盖原插件目录\\n3. 在 chrome://extensions 点击刷新按钮\\n4. 刷新 Telegram Web 页面');
-          
-          await this.updater.markAsInstalled();
-        });
-      }
-    } catch (e) {
-      console.log('Update check skipped:', e);
-    }
   }
 
   bindEvents() {
@@ -65,48 +27,32 @@ class TGGroupBot {
       tab.addEventListener('click', () => this.switchTab(tab.dataset.tab));
     });
 
-    // Search
-    document.getElementById('search-btn').addEventListener('click', () => this.search());
-    document.getElementById('keyword').addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') this.search();
+    // Campaigns tab
+    document.getElementById('refresh-campaigns').addEventListener('click', () => {
+      this.campaignManager.load().then(() => this.renderCampaignsList());
     });
 
-    // Groups
-    document.getElementById('clear-groups').addEventListener('click', () => this.clearGroups());
-
-    // Message
-    document.getElementById('send-btn').addEventListener('click', () => this.startSending());
-    document.getElementById('stop-btn').addEventListener('click', () => this.stopSending());
-
-    // Template selectors
-    document.getElementById('keyword-select').addEventListener('change', (e) => {
-      if (e.target.value) {
-        const template = this.keywordTemplates.find(t => t.id === e.target.value);
-        if (template) {
-          document.getElementById('keyword').value = template.keywords[0] || '';
-        }
-      }
+    // Create tab
+    document.getElementById('add-images-btn').addEventListener('click', () => {
+      document.getElementById('campaign-images').click();
     });
+    document.getElementById('campaign-images').addEventListener('change', (e) => this.handleImageSelect(e));
+    document.getElementById('save-campaign-btn').addEventListener('click', () => this.saveCampaign(false));
+    document.getElementById('save-and-run-btn').addEventListener('click', () => this.saveCampaign(true));
 
-    document.getElementById('message-select').addEventListener('change', (e) => {
-      if (e.target.value) {
-        const template = this.messageTemplates.find(t => t.id === e.target.value);
-        if (template) {
-          document.getElementById('message-content').value = template.content;
-        }
-      }
-    });
+    // Running tab
+    document.getElementById('go-campaigns-btn').addEventListener('click', () => this.switchTab('campaigns'));
+    document.getElementById('pause-btn').addEventListener('click', () => this.pauseCampaign());
+    document.getElementById('resume-btn').addEventListener('click', () => this.resumeCampaign());
+    document.getElementById('stop-btn').addEventListener('click', () => this.stopCampaign());
 
-    // Template management
-    document.getElementById('add-keyword-btn').addEventListener('click', () => this.addKeywordTemplate());
-    document.getElementById('add-message-btn').addEventListener('click', () => this.addMessageTemplate());
-    
-    // Import/Export
-    document.getElementById('export-btn').addEventListener('click', () => this.exportTemplates());
-    document.getElementById('import-btn').addEventListener('click', () => {
-      document.getElementById('import-file').click();
+    // Modal
+    document.querySelectorAll('.modal-close').forEach(btn => {
+      btn.addEventListener('click', () => this.closeModal());
     });
-    document.getElementById('import-file').addEventListener('change', (e) => this.importTemplates(e));
+    document.getElementById('modal-run-btn').addEventListener('click', () => this.runFromModal());
+    document.getElementById('modal-edit-btn').addEventListener('click', () => this.editFromModal());
+    document.getElementById('modal-delete-btn').addEventListener('click', () => this.deleteFromModal());
   }
 
   switchTab(tabName) {
@@ -117,6 +63,8 @@ class TGGroupBot {
     document.getElementById(`${tabName}-tab`).classList.add('active');
   }
 
+  // =============== Connection ===============
+
   async checkConnection() {
     const status = document.getElementById('status');
     status.textContent = '检查连接中...';
@@ -124,341 +72,428 @@ class TGGroupBot {
 
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      this.currentTab = tab;
       
-      if (tab && tab.url && tab.url.includes('web.telegram.org')) {
-        // Try to ping content script
+      if (tab?.url?.includes('web.telegram.org')) {
         try {
           const response = await chrome.tabs.sendMessage(tab.id, { action: 'getStatus' });
-          if (response && response.connected) {
-            status.textContent = '✓ 已连接 Telegram Web';
+          if (response?.connected) {
+            status.textContent = '✓ 已连接 Telegram';
             status.className = 'status connected';
             return true;
           }
         } catch (e) {
-          // Content script might not be injected yet
-          status.textContent = '⟳ 请刷新 Telegram 页面';
+          status.textContent = '⟳ 刷新 Telegram 页面';
           status.className = 'status checking';
-          return false;
         }
       } else {
-        status.textContent = '✗ 请打开 web.telegram.org';
+        status.textContent = '✗ 请打开 Telegram Web';
         status.className = 'status disconnected';
-        return false;
       }
     } catch (error) {
       status.textContent = '✗ 连接失败';
       status.className = 'status disconnected';
-      return false;
     }
+    return false;
   }
 
-  async search() {
-    const keyword = document.getElementById('keyword').value.trim();
-    if (!keyword) {
-      alert('请输入搜索关键词');
-      return;
-    }
-
-    const resultsEl = document.getElementById('search-results');
-    resultsEl.innerHTML = '<div class="loading">搜索中</div>';
-
-    // Check connection first
-    const connected = await this.checkConnection();
-    if (!connected) {
-      resultsEl.innerHTML = '<div class="empty">请先打开 Telegram Web 并刷新页面</div>';
-      return;
-    }
-
+  async checkForUpdates() {
     try {
-      const response = await chrome.tabs.sendMessage(this.currentTab.id, {
-        action: 'search',
-        keyword: keyword
-      });
-
-      console.log('Search response:', response);
-
-      if (response && response.results && response.results.length > 0) {
-        this.renderSearchResults(response.results);
-      } else if (response && response.error) {
-        resultsEl.innerHTML = `<div class="empty">搜索失败: ${response.error}</div>`;
-      } else {
-        resultsEl.innerHTML = '<div class="empty">未找到群组，请尝试其他关键词</div>';
+      const result = await this.updater.checkForUpdates();
+      if (result.hasUpdate) {
+        const banner = document.getElementById('update-banner');
+        document.getElementById('new-version').textContent = result.latestVersion;
+        banner.classList.remove('hidden');
+        
+        document.getElementById('update-btn').addEventListener('click', async () => {
+          await this.updater.downloadUpdate(result.downloadUrl);
+          alert('下载完成！解压后覆盖插件目录，然后刷新。');
+        });
       }
-    } catch (error) {
-      console.error('Search error:', error);
-      resultsEl.innerHTML = `<div class="empty">搜索出错: ${error.message}<br>请刷新 Telegram 页面重试</div>`;
+    } catch (e) {
+      console.log('Update check failed:', e);
     }
   }
 
-  renderSearchResults(results) {
-    const resultsEl = document.getElementById('search-results');
-    
-    if (!results || results.length === 0) {
-      resultsEl.innerHTML = '<div class="empty">未找到群组</div>';
-      return;
-    }
+  // =============== Campaigns List ===============
 
-    resultsEl.innerHTML = results.map(group => {
-      const typeIcon = group.isChannel ? '📢' : group.isGroup ? '👥' : '💬';
-      const typeLabel = group.isChannel ? '频道' : group.isGroup ? '群组' : '';
-      
-      return `
-        <div class="result-item" data-id="${group.id}">
-          <div class="avatar">${typeIcon}</div>
-          <div class="info">
-            <div class="name">${this.escapeHtml(group.name)}</div>
-            <div class="meta">${this.escapeHtml(group.members)} ${typeLabel}</div>
-          </div>
-          <div class="actions">
-            <button class="action-btn ${this.isGroupSaved(group.id) ? 'saved' : ''}" 
-                    data-action="save"
-                    data-id="${group.id}"
-                    data-name="${this.escapeAttr(group.name)}"
-                    data-members="${this.escapeAttr(group.members || '')}"
-                    data-is-group="${group.isGroup}"
-                    data-is-channel="${group.isChannel}">
-              ${this.isGroupSaved(group.id) ? '已保存' : '保存'}
-            </button>
-          </div>
+  renderCampaignsList() {
+    const listEl = document.getElementById('campaigns-list');
+    const campaigns = this.campaignManager.campaigns;
+    
+    document.getElementById('campaign-count').textContent = `共 ${campaigns.length} 个活动`;
+
+    if (campaigns.length === 0) {
+      listEl.innerHTML = `
+        <div class="empty-state">
+          <p>还没有创建活动</p>
+          <button class="btn primary" onclick="bot.switchTab('create')">➕ 创建第一个活动</button>
         </div>
       `;
-    }).join('');
-
-    // Bind click events
-    resultsEl.querySelectorAll('[data-action="save"]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const data = e.target.dataset;
-        this.saveGroup(data.id, data.name, data.members, data.isGroup === 'true', data.isChannel === 'true');
-      });
-    });
-  }
-
-  isGroupSaved(id) {
-    return this.savedGroups.some(g => g.id === id);
-  }
-
-  async saveGroup(id, name, members, isGroup, isChannel) {
-    if (this.isGroupSaved(id)) {
-      // Toggle - remove if already saved
-      await this.removeGroup(id);
       return;
     }
 
-    this.savedGroups.push({ 
-      id, 
-      name, 
-      members, 
-      isGroup,
-      isChannel,
-      joined: false,
-      addedAt: Date.now()
-    });
-    
-    await chrome.storage.local.set({ savedGroups: this.savedGroups });
-    this.updateGroupCount();
-    this.renderSavedGroups();
-    
-    // Update search results button
-    const btn = document.querySelector(`.result-item[data-id="${id}"] .action-btn`);
-    if (btn) {
-      btn.textContent = '已保存';
-      btn.classList.add('saved');
-    }
-  }
+    listEl.innerHTML = campaigns.map(c => {
+      const statusLabels = {
+        draft: '草稿',
+        ready: '就绪',
+        running: '运行中',
+        paused: '已暂停',
+        completed: '已完成'
+      };
 
-  async loadSavedGroups() {
-    const data = await chrome.storage.local.get('savedGroups');
-    this.savedGroups = data.savedGroups || [];
-  }
-
-  updateGroupCount() {
-    const total = this.savedGroups.length;
-    const joined = this.savedGroups.filter(g => g.joined).length;
-    document.getElementById('group-count').textContent = `已保存: ${total} 个 (已加入: ${joined})`;
-  }
-
-  renderSavedGroups() {
-    const listEl = document.getElementById('saved-groups');
-    
-    if (this.savedGroups.length === 0) {
-      listEl.innerHTML = '<div class="empty">暂无保存的群组<br>请先搜索并保存群组</div>';
-      return;
-    }
-
-    listEl.innerHTML = this.savedGroups.map(group => {
-      const typeIcon = group.isChannel ? '📢' : group.isGroup ? '👥' : '💬';
-      const joinedBadge = group.joined ? '<span class="badge joined">已加入</span>' : '';
-      
       return `
-        <div class="result-item" data-id="${group.id}">
-          <div class="avatar">${typeIcon}</div>
-          <div class="info">
-            <div class="name">${this.escapeHtml(group.name)} ${joinedBadge}</div>
-            <div class="meta">${this.escapeHtml(group.members || '')}</div>
+        <div class="campaign-card" data-id="${c.id}">
+          <div class="card-header">
+            <span class="card-name">${this.escapeHtml(c.name)}</span>
+            <span class="card-status ${c.status}">${statusLabels[c.status]}</span>
           </div>
-          <div class="actions">
-            ${!group.joined ? `
-              <button class="action-btn join" data-action="join" data-id="${group.id}">加入</button>
-            ` : ''}
-            <button class="action-btn remove" data-action="remove" data-id="${group.id}">删除</button>
+          <div class="card-stats">
+            <span>🔑 ${c.keywords.length} 关键词</span>
+            <span>👥 ${c.stats?.joined || 0} 群</span>
+            <span>💬 ${c.stats?.sent || 0} 发送</span>
+          </div>
+          <div class="card-actions">
+            <button class="btn small" data-action="view" data-id="${c.id}">查看</button>
+            ${c.status !== 'running' ? `
+              <button class="btn success" data-action="run" data-id="${c.id}">🚀 运行</button>
+            ` : `
+              <button class="btn warning" data-action="view-running" data-id="${c.id}">查看进度</button>
+            `}
           </div>
         </div>
       `;
     }).join('');
 
     // Bind events
-    listEl.querySelectorAll('[data-action="join"]').forEach(btn => {
-      btn.addEventListener('click', () => this.joinGroup(btn.dataset.id));
-    });
-    
-    listEl.querySelectorAll('[data-action="remove"]').forEach(btn => {
-      btn.addEventListener('click', () => this.removeGroup(btn.dataset.id));
-    });
-  }
-
-  async joinGroup(id) {
-    const btn = document.querySelector(`[data-action="join"][data-id="${id}"]`);
-    if (btn) {
-      btn.textContent = '加入中...';
-      btn.disabled = true;
-    }
-
-    try {
-      const response = await chrome.tabs.sendMessage(this.currentTab.id, {
-        action: 'joinGroup',
-        groupId: id
+    listEl.querySelectorAll('[data-action="view"]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.showCampaignDetail(btn.dataset.id);
       });
+    });
 
-      if (response && response.success) {
-        const group = this.savedGroups.find(g => g.id === id);
-        if (group) {
-          group.joined = true;
-          await chrome.storage.local.set({ savedGroups: this.savedGroups });
-          this.updateGroupCount();
-          this.renderSavedGroups();
-        }
-      } else {
-        alert(`加入失败: ${response?.error || '未知错误'}`);
-        if (btn) {
-          btn.textContent = '加入';
-          btn.disabled = false;
-        }
-      }
-    } catch (error) {
-      console.error('Join error:', error);
-      alert(`加入出错: ${error.message}`);
-      if (btn) {
-        btn.textContent = '加入';
-        btn.disabled = false;
-      }
+    listEl.querySelectorAll('[data-action="run"]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.runCampaign(btn.dataset.id);
+      });
+    });
+
+    listEl.querySelectorAll('[data-action="view-running"]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.switchTab('running');
+      });
+    });
+
+    listEl.querySelectorAll('.campaign-card').forEach(card => {
+      card.addEventListener('click', () => {
+        this.showCampaignDetail(card.dataset.id);
+      });
+    });
+  }
+
+  // =============== Campaign Detail Modal ===============
+
+  showCampaignDetail(id) {
+    const campaign = this.campaignManager.get(id);
+    if (!campaign) return;
+
+    this.viewingCampaignId = id;
+    
+    document.getElementById('modal-title').textContent = campaign.name;
+    
+    const body = document.getElementById('modal-body');
+    body.innerHTML = `
+      <div class="detail-row">
+        <div class="detail-label">🔑 搜索关键词</div>
+        <div class="detail-value">${this.escapeHtml(campaign.keywords.join('\n'))}</div>
+      </div>
+      <div class="detail-row">
+        <div class="detail-label">💬 广告内容</div>
+        <div class="detail-value">${this.escapeHtml(campaign.message)}</div>
+      </div>
+      ${campaign.images.length > 0 ? `
+        <div class="detail-row">
+          <div class="detail-label">🖼️ 图片 (${campaign.images.length}张)</div>
+          <div class="detail-images">
+            ${campaign.images.map(img => `<img src="${img}" alt="ad">`).join('')}
+          </div>
+        </div>
+      ` : ''}
+      <div class="detail-row">
+        <div class="detail-label">⚙️ 设置</div>
+        <div class="detail-value">发送间隔: ${campaign.settings.interval}秒 | 最多加入: ${campaign.settings.maxGroups}群 | 自动加入: ${campaign.settings.autoJoin ? '是' : '否'}</div>
+      </div>
+      <div class="detail-row">
+        <div class="detail-label">📊 统计</div>
+        <div class="detail-value">搜索: ${campaign.stats?.searched || 0} | 加入: ${campaign.stats?.joined || 0} | 发送: ${campaign.stats?.sent || 0} | 失败: ${campaign.stats?.failed || 0}</div>
+      </div>
+    `;
+
+    document.getElementById('campaign-modal').classList.remove('hidden');
+  }
+
+  closeModal() {
+    document.getElementById('campaign-modal').classList.add('hidden');
+    this.viewingCampaignId = null;
+  }
+
+  runFromModal() {
+    if (this.viewingCampaignId) {
+      this.closeModal();
+      this.runCampaign(this.viewingCampaignId);
     }
   }
 
-  async removeGroup(id) {
-    this.savedGroups = this.savedGroups.filter(g => g.id !== id);
-    await chrome.storage.local.set({ savedGroups: this.savedGroups });
-    this.updateGroupCount();
-    this.renderSavedGroups();
-    
-    // Update search results if visible
-    const searchBtn = document.querySelector(`.result-item[data-id="${id}"] [data-action="save"]`);
-    if (searchBtn) {
-      searchBtn.textContent = '保存';
-      searchBtn.classList.remove('saved');
+  editFromModal() {
+    if (this.viewingCampaignId) {
+      const campaign = this.campaignManager.get(this.viewingCampaignId);
+      this.closeModal();
+      this.loadCampaignToForm(campaign);
+      this.switchTab('create');
     }
   }
 
-  async clearGroups() {
-    if (!confirm('确定要清空所有保存的群组吗？')) return;
-    
-    this.savedGroups = [];
-    await chrome.storage.local.set({ savedGroups: [] });
-    this.updateGroupCount();
-    this.renderSavedGroups();
+  deleteFromModal() {
+    if (this.viewingCampaignId && confirm('确定删除此活动吗？')) {
+      this.campaignManager.delete(this.viewingCampaignId);
+      this.closeModal();
+      this.renderCampaignsList();
+    }
   }
 
-  async startSending() {
-    const message = document.getElementById('message-content').value.trim();
+  // =============== Create/Edit Campaign ===============
+
+  handleImageSelect(e) {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    // Read files as base64
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        this.selectedImages.push(event.target.result);
+        this.renderImagePreviews();
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  renderImagePreviews() {
+    const container = document.getElementById('image-preview');
+    document.getElementById('image-count').textContent = 
+      this.selectedImages.length > 0 ? `已选 ${this.selectedImages.length} 张` : '未选择';
+
+    container.innerHTML = this.selectedImages.map((img, i) => `
+      <div class="preview-item">
+        <img src="${img}" alt="preview">
+        <button class="remove-img" data-index="${i}">&times;</button>
+      </div>
+    `).join('');
+
+    container.querySelectorAll('.remove-img').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.selectedImages.splice(parseInt(btn.dataset.index), 1);
+        this.renderImagePreviews();
+      });
+    });
+  }
+
+  loadCampaignToForm(campaign) {
+    this.editingCampaignId = campaign.id;
+    document.getElementById('campaign-name').value = campaign.name;
+    document.getElementById('campaign-keywords').value = campaign.keywords.join('\n');
+    document.getElementById('campaign-message').value = campaign.message;
+    document.getElementById('campaign-interval').value = campaign.settings.interval;
+    document.getElementById('campaign-max-groups').value = campaign.settings.maxGroups;
+    document.getElementById('campaign-auto-join').checked = campaign.settings.autoJoin;
+    
+    this.selectedImages = [...campaign.images];
+    this.renderImagePreviews();
+  }
+
+  async saveCampaign(andRun = false) {
+    const name = document.getElementById('campaign-name').value.trim();
+    const keywordsText = document.getElementById('campaign-keywords').value.trim();
+    const message = document.getElementById('campaign-message').value.trim();
+    const interval = parseInt(document.getElementById('campaign-interval').value);
+    const maxGroups = parseInt(document.getElementById('campaign-max-groups').value);
+    const autoJoin = document.getElementById('campaign-auto-join').checked;
+
+    if (!name) {
+      alert('请输入活动名称');
+      return;
+    }
+    if (!keywordsText) {
+      alert('请输入至少一个关键词');
+      return;
+    }
     if (!message) {
-      alert('请输入消息内容');
+      alert('请输入广告内容');
       return;
     }
 
-    const joinedGroups = this.savedGroups.filter(g => g.joined);
-    if (joinedGroups.length === 0) {
-      alert('请先加入一些群组');
-      return;
+    const keywords = keywordsText.split('\n').map(k => k.trim()).filter(k => k);
+
+    const data = {
+      name,
+      keywords,
+      message,
+      images: this.selectedImages,
+      interval,
+      maxGroups,
+      autoJoin
+    };
+
+    let campaign;
+    if (this.editingCampaignId) {
+      campaign = this.campaignManager.update(this.editingCampaignId, data);
+      this.editingCampaignId = null;
+    } else {
+      campaign = this.campaignManager.create(data);
     }
 
-    if (!confirm(`将向 ${joinedGroups.length} 个群组发送消息，确定吗？`)) {
-      return;
-    }
-
-    this.isSending = true;
-    document.getElementById('send-btn').disabled = true;
-    document.getElementById('stop-btn').disabled = false;
+    // Reset form
+    this.resetCreateForm();
     
-    const interval = parseInt(document.getElementById('interval').value) * 1000;
-    const logEl = document.getElementById('send-log');
-    logEl.innerHTML = '';
+    if (andRun) {
+      this.runCampaign(campaign.id);
+    } else {
+      alert('活动已保存！');
+      this.renderCampaignsList();
+      this.switchTab('campaigns');
+    }
+  }
 
-    this.addLog(`开始发送到 ${joinedGroups.length} 个群组...`);
+  resetCreateForm() {
+    document.getElementById('campaign-name').value = '';
+    document.getElementById('campaign-keywords').value = '';
+    document.getElementById('campaign-message').value = '';
+    document.getElementById('campaign-interval').value = '60';
+    document.getElementById('campaign-max-groups').value = '20';
+    document.getElementById('campaign-auto-join').checked = true;
+    this.selectedImages = [];
+    this.renderImagePreviews();
+    this.editingCampaignId = null;
+  }
 
-    for (let i = 0; i < joinedGroups.length; i++) {
-      if (!this.isSending) {
-        this.addLog('已停止发送', 'error');
-        break;
-      }
+  // =============== Run Campaign ===============
 
-      const group = joinedGroups[i];
-      this.addLog(`[${i + 1}/${joinedGroups.length}] 发送到 ${group.name}...`);
-
-      try {
-        const response = await chrome.tabs.sendMessage(this.currentTab.id, {
-          action: 'sendMessage',
-          groupId: group.id,
-          message: message
-        });
-
-        if (response && response.success) {
-          this.addLog(`✓ 成功: ${group.name}`, 'success');
-        } else {
-          this.addLog(`✗ 失败: ${group.name} - ${response?.error || '未知错误'}`, 'error');
-        }
-      } catch (error) {
-        this.addLog(`✗ 错误: ${group.name} - ${error.message}`, 'error');
-      }
-
-      // Wait before next message
-      if (this.isSending && i < joinedGroups.length - 1) {
-        this.addLog(`等待 ${interval / 1000} 秒...`);
-        await this.sleep(interval);
-      }
+  async runCampaign(id) {
+    const connected = await this.checkConnection();
+    if (!connected) {
+      alert('请先打开 Telegram Web 并刷新页面');
+      return;
     }
 
-    this.stopSending();
-    this.addLog('发送完成！', 'success');
+    const campaign = this.campaignManager.get(id);
+    if (!campaign) return;
+
+    // Switch to running tab
+    this.switchTab('running');
+    this.showRunningPanel(campaign);
+
+    // Run with callbacks
+    try {
+      await this.campaignManager.run(id, {
+        onLog: (msg, type) => this.addRunningLog(msg, type),
+        onStats: (stats, maxGroups) => this.updateRunningStats(stats, maxGroups),
+        onStatusChange: (status) => this.updateRunningStatus(status)
+      });
+    } catch (error) {
+      this.addRunningLog(`❌ ${error.message}`, 'error');
+    }
+
+    this.renderCampaignsList();
   }
 
-  stopSending() {
-    this.isSending = false;
-    document.getElementById('send-btn').disabled = false;
-    document.getElementById('stop-btn').disabled = true;
+  showRunningPanel(campaign) {
+    document.getElementById('no-running').classList.add('hidden');
+    document.getElementById('running-panel').classList.remove('hidden');
+    document.getElementById('running-name').textContent = campaign.name;
+    document.getElementById('running-log').innerHTML = '';
+    this.updateRunningStats({ searched: 0, joined: 0, sent: 0, failed: 0 }, campaign.settings.maxGroups);
+    this.updateRunningStatus('running');
   }
 
-  addLog(text, type = '') {
-    const logEl = document.getElementById('send-log');
+  updateRunningTab() {
+    const cm = this.campaignManager;
+    if (cm.isRunning && cm.currentCampaign) {
+      this.showRunningPanel(cm.currentCampaign);
+    } else {
+      document.getElementById('no-running').classList.remove('hidden');
+      document.getElementById('running-panel').classList.add('hidden');
+    }
+  }
+
+  updateRunningStats(stats, maxGroups) {
+    document.getElementById('stat-searched').textContent = stats.searched;
+    document.getElementById('stat-joined').textContent = stats.joined;
+    document.getElementById('stat-sent').textContent = stats.sent;
+    document.getElementById('stat-failed').textContent = stats.failed;
+
+    const progress = maxGroups > 0 ? Math.min(100, (stats.sent / maxGroups) * 100) : 0;
+    document.getElementById('progress-fill').style.width = `${progress}%`;
+  }
+
+  updateRunningStatus(status) {
+    const statusEl = document.getElementById('running-status');
+    const pauseBtn = document.getElementById('pause-btn');
+    const resumeBtn = document.getElementById('resume-btn');
+
+    if (status === 'running') {
+      statusEl.textContent = '运行中';
+      statusEl.className = 'status-badge';
+      pauseBtn.classList.remove('hidden');
+      resumeBtn.classList.add('hidden');
+    } else if (status === 'paused') {
+      statusEl.textContent = '已暂停';
+      statusEl.className = 'status-badge paused';
+      pauseBtn.classList.add('hidden');
+      resumeBtn.classList.remove('hidden');
+    } else {
+      statusEl.textContent = status === 'completed' ? '已完成' : '已停止';
+      statusEl.className = 'status-badge stopped';
+      pauseBtn.classList.add('hidden');
+      resumeBtn.classList.add('hidden');
+    }
+  }
+
+  addRunningLog(text, type = '') {
+    const logEl = document.getElementById('running-log');
     const time = new Date().toLocaleTimeString();
     const entry = document.createElement('div');
     entry.className = `log-entry ${type}`;
-    entry.innerHTML = `<span class="time">[${time}]</span> ${text}`;
+    entry.innerHTML = `<span class="time">[${time}]</span> ${this.escapeHtml(text)}`;
     logEl.insertBefore(entry, logEl.firstChild);
   }
 
-  sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  pauseCampaign() {
+    if (this.campaignManager.pause()) {
+      this.addRunningLog('⏸️ 活动已暂停', 'warning');
+      this.updateRunningStatus('paused');
+    }
   }
+
+  resumeCampaign() {
+    if (this.campaignManager.resume()) {
+      this.addRunningLog('▶️ 活动继续运行', 'success');
+      this.updateRunningStatus('running');
+    }
+  }
+
+  stopCampaign() {
+    if (confirm('确定停止当前活动吗？')) {
+      if (this.campaignManager.stop()) {
+        this.addRunningLog('⏹️ 活动已停止', 'error');
+        this.updateRunningStatus('stopped');
+        this.renderCampaignsList();
+      }
+    }
+  }
+
+  // =============== Utils ===============
 
   escapeHtml(text) {
     if (!text) return '';
@@ -466,248 +501,9 @@ class TGGroupBot {
     div.textContent = text;
     return div.innerHTML;
   }
-
-  escapeAttr(text) {
-    if (!text) return '';
-    return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
-
-  // =============== Template Management ===============
-
-  async loadTemplates() {
-    const data = await chrome.storage.local.get(['keywordTemplates', 'messageTemplates']);
-    this.keywordTemplates = data.keywordTemplates || [];
-    this.messageTemplates = data.messageTemplates || [];
-  }
-
-  async saveTemplates() {
-    await chrome.storage.local.set({
-      keywordTemplates: this.keywordTemplates,
-      messageTemplates: this.messageTemplates
-    });
-  }
-
-  renderTemplateSelectors() {
-    // Keyword selector
-    const keywordSelect = document.getElementById('keyword-select');
-    keywordSelect.innerHTML = '<option value="">-- 选择关键词模板 --</option>';
-    this.keywordTemplates.forEach(t => {
-      const opt = document.createElement('option');
-      opt.value = t.id;
-      opt.textContent = `${t.name} (${t.keywords.length}个关键词)`;
-      keywordSelect.appendChild(opt);
-    });
-
-    // Message selector
-    const messageSelect = document.getElementById('message-select');
-    messageSelect.innerHTML = '<option value="">-- 选择消息模板 --</option>';
-    this.messageTemplates.forEach(t => {
-      const opt = document.createElement('option');
-      opt.value = t.id;
-      opt.textContent = t.name;
-      messageSelect.appendChild(opt);
-    });
-  }
-
-  renderTemplateList() {
-    // Keyword templates list
-    const keywordListEl = document.getElementById('keyword-templates');
-    if (this.keywordTemplates.length === 0) {
-      keywordListEl.innerHTML = '<div class="empty" style="padding:10px;font-size:12px;">暂无关键词模板</div>';
-    } else {
-      keywordListEl.innerHTML = this.keywordTemplates.map(t => `
-        <div class="template-item" data-id="${t.id}">
-          <div class="template-info">
-            <div class="template-name">${this.escapeHtml(t.name)}</div>
-            <div class="template-preview">${this.escapeHtml(t.keywords.join(', '))}</div>
-          </div>
-          <div class="template-actions">
-            <button class="use" data-type="keyword" data-id="${t.id}">使用</button>
-            <button class="delete" data-type="keyword" data-id="${t.id}">删除</button>
-          </div>
-        </div>
-      `).join('');
-    }
-
-    // Message templates list
-    const messageListEl = document.getElementById('message-templates');
-    if (this.messageTemplates.length === 0) {
-      messageListEl.innerHTML = '<div class="empty" style="padding:10px;font-size:12px;">暂无消息模板</div>';
-    } else {
-      messageListEl.innerHTML = this.messageTemplates.map(t => `
-        <div class="template-item" data-id="${t.id}">
-          <div class="template-info">
-            <div class="template-name">${this.escapeHtml(t.name)}</div>
-            <div class="template-preview">${this.escapeHtml(t.content.substring(0, 50))}${t.content.length > 50 ? '...' : ''}</div>
-          </div>
-          <div class="template-actions">
-            <button class="use" data-type="message" data-id="${t.id}">使用</button>
-            <button class="delete" data-type="message" data-id="${t.id}">删除</button>
-          </div>
-        </div>
-      `).join('');
-    }
-
-    // Bind events
-    document.querySelectorAll('.template-actions .use').forEach(btn => {
-      btn.addEventListener('click', (e) => this.useTemplate(e.target.dataset.type, e.target.dataset.id));
-    });
-    document.querySelectorAll('.template-actions .delete').forEach(btn => {
-      btn.addEventListener('click', (e) => this.deleteTemplate(e.target.dataset.type, e.target.dataset.id));
-    });
-  }
-
-  async addKeywordTemplate() {
-    const nameEl = document.getElementById('new-keyword-name');
-    const valueEl = document.getElementById('new-keyword-value');
-    
-    const name = nameEl.value.trim();
-    const value = valueEl.value.trim();
-    
-    if (!name || !value) {
-      alert('请填写模板名称和关键词');
-      return;
-    }
-
-    const keywords = value.split(/[,，]/).map(k => k.trim()).filter(k => k);
-    
-    this.keywordTemplates.push({
-      id: Date.now().toString(),
-      name,
-      keywords,
-      createdAt: Date.now()
-    });
-
-    await this.saveTemplates();
-    this.renderTemplateSelectors();
-    this.renderTemplateList();
-
-    nameEl.value = '';
-    valueEl.value = '';
-  }
-
-  async addMessageTemplate() {
-    const nameEl = document.getElementById('new-message-name');
-    const valueEl = document.getElementById('new-message-value');
-    
-    const name = nameEl.value.trim();
-    const content = valueEl.value.trim();
-    
-    if (!name || !content) {
-      alert('请填写模板名称和消息内容');
-      return;
-    }
-
-    this.messageTemplates.push({
-      id: Date.now().toString(),
-      name,
-      content,
-      createdAt: Date.now()
-    });
-
-    await this.saveTemplates();
-    this.renderTemplateSelectors();
-    this.renderTemplateList();
-
-    nameEl.value = '';
-    valueEl.value = '';
-  }
-
-  useTemplate(type, id) {
-    if (type === 'keyword') {
-      const template = this.keywordTemplates.find(t => t.id === id);
-      if (template) {
-        document.getElementById('keyword').value = template.keywords[0] || '';
-        document.getElementById('keyword-select').value = id;
-        this.switchTab('search');
-      }
-    } else if (type === 'message') {
-      const template = this.messageTemplates.find(t => t.id === id);
-      if (template) {
-        document.getElementById('message-content').value = template.content;
-        document.getElementById('message-select').value = id;
-        this.switchTab('message');
-      }
-    }
-  }
-
-  async deleteTemplate(type, id) {
-    if (!confirm('确定删除此模板吗？')) return;
-
-    if (type === 'keyword') {
-      this.keywordTemplates = this.keywordTemplates.filter(t => t.id !== id);
-    } else if (type === 'message') {
-      this.messageTemplates = this.messageTemplates.filter(t => t.id !== id);
-    }
-
-    await this.saveTemplates();
-    this.renderTemplateSelectors();
-    this.renderTemplateList();
-  }
-
-  exportTemplates() {
-    const data = {
-      version: this.updater.currentVersion,
-      exportedAt: new Date().toISOString(),
-      keywordTemplates: this.keywordTemplates,
-      messageTemplates: this.messageTemplates
-    };
-
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `tg-group-bot-templates-${Date.now()}.json`;
-    a.click();
-    
-    URL.revokeObjectURL(url);
-  }
-
-  async importTemplates(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-
-      if (data.keywordTemplates) {
-        const count = data.keywordTemplates.length;
-        if (confirm(`导入 ${count} 个关键词模板？`)) {
-          // Generate new IDs to avoid conflicts
-          data.keywordTemplates.forEach(t => {
-            t.id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
-          });
-          this.keywordTemplates.push(...data.keywordTemplates);
-        }
-      }
-
-      if (data.messageTemplates) {
-        const count = data.messageTemplates.length;
-        if (confirm(`导入 ${count} 个消息模板？`)) {
-          data.messageTemplates.forEach(t => {
-            t.id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
-          });
-          this.messageTemplates.push(...data.messageTemplates);
-        }
-      }
-
-      await this.saveTemplates();
-      this.renderTemplateSelectors();
-      this.renderTemplateList();
-      
-      alert('导入成功！');
-    } catch (error) {
-      alert('导入失败: ' + error.message);
-    }
-
-    // Reset file input
-    e.target.value = '';
-  }
 }
 
-// Initialize when DOM is ready
+// Initialize
 document.addEventListener('DOMContentLoaded', () => {
-  window.bot = new TGGroupBot();
+  window.bot = new TGMarketing();
 });

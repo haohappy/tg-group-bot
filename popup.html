@@ -3,110 +3,140 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TG Group Bot</title>
+  <title>TG Marketing</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>🤖 TG Group Bot <span id="version" class="version"></span></h1>
+      <h1>📣 TG Marketing <span id="version" class="version"></span></h1>
       <div id="status" class="status">检查连接中...</div>
       <div id="update-banner" class="update-banner hidden">
-        <span>🎉 新版本可用: <strong id="new-version"></strong></span>
-        <button id="update-btn" class="btn small">下载更新</button>
+        <span>🎉 新版本: <strong id="new-version"></strong></span>
+        <button id="update-btn" class="btn small">更新</button>
       </div>
     </header>
 
     <!-- Tab Navigation -->
     <nav class="tabs">
-      <button class="tab active" data-tab="search">🔍 搜群</button>
-      <button class="tab" data-tab="groups">📋 群列表</button>
-      <button class="tab" data-tab="message">💬 发消息</button>
-      <button class="tab" data-tab="templates">⚙️ 模板</button>
+      <button class="tab active" data-tab="campaigns">📋 活动</button>
+      <button class="tab" data-tab="create">➕ 新建</button>
+      <button class="tab" data-tab="running">▶️ 运行</button>
     </nav>
 
-    <!-- Search Tab -->
-    <section id="search-tab" class="tab-content active">
-      <div class="template-selector">
-        <select id="keyword-select">
-          <option value="">-- 选择关键词模板 --</option>
-        </select>
-      </div>
-      <div class="input-group">
-        <input type="text" id="keyword" placeholder="输入关键词搜索群组...">
-        <button id="search-btn" class="btn primary">搜索</button>
-      </div>
-      <div id="search-results" class="results-list"></div>
-    </section>
-
-    <!-- Groups Tab -->
-    <section id="groups-tab" class="tab-content">
+    <!-- Campaigns List Tab -->
+    <section id="campaigns-tab" class="tab-content active">
       <div class="toolbar">
-        <span id="group-count">已保存: 0 个群</span>
-        <button id="clear-groups" class="btn small">清空</button>
+        <span id="campaign-count">共 0 个活动</span>
+        <button id="refresh-campaigns" class="btn small">刷新</button>
       </div>
-      <div id="saved-groups" class="results-list"></div>
+      <div id="campaigns-list" class="campaigns-list"></div>
     </section>
 
-    <!-- Message Tab -->
-    <section id="message-tab" class="tab-content">
-      <div class="template-selector">
-        <select id="message-select">
-          <option value="">-- 选择消息模板 --</option>
-        </select>
+    <!-- Create Campaign Tab -->
+    <section id="create-tab" class="tab-content">
+      <div class="form-section">
+        <h3>📝 活动信息</h3>
+        <input type="text" id="campaign-name" placeholder="活动名称 (如: 美女图片推广)">
       </div>
-      <div class="input-group">
-        <textarea id="message-content" placeholder="输入要发送的消息内容..."></textarea>
+
+      <div class="form-section">
+        <h3>🔑 搜索关键词</h3>
+        <p class="hint">每行一个关键词，机器人会依次搜索</p>
+        <textarea id="campaign-keywords" placeholder="beautiful girls&#10;sexy photos&#10;美女图片"></textarea>
       </div>
-      <div class="settings">
-        <label>
-          发送间隔: <input type="number" id="interval" value="30" min="10" max="300"> 秒
-        </label>
+
+      <div class="form-section">
+        <h3>💬 广告内容</h3>
+        <p class="hint">支持 Emoji，换行会保留</p>
+        <textarea id="campaign-message" placeholder="🔥 最新美女图片每日更新！&#10;👉 立即访问: https://example.com&#10;免费观看 ✨"></textarea>
       </div>
+
+      <div class="form-section">
+        <h3>🖼️ 图片 (可选)</h3>
+        <p class="hint">添加图片可提高点击率</p>
+        <div class="image-upload">
+          <input type="file" id="campaign-images" accept="image/*" multiple style="display:none">
+          <button id="add-images-btn" class="btn small">选择图片</button>
+          <span id="image-count">未选择</span>
+        </div>
+        <div id="image-preview" class="image-preview"></div>
+      </div>
+
+      <div class="form-section">
+        <h3>⚙️ 发送设置</h3>
+        <div class="settings-row">
+          <label>每个群发送间隔: <input type="number" id="campaign-interval" value="60" min="30" max="600"> 秒</label>
+        </div>
+        <div class="settings-row">
+          <label>最多加入群数: <input type="number" id="campaign-max-groups" value="20" min="1" max="100"> 个</label>
+        </div>
+        <div class="settings-row">
+          <label><input type="checkbox" id="campaign-auto-join" checked> 自动加入搜索到的群</label>
+        </div>
+      </div>
+
       <div class="actions">
-        <button id="send-btn" class="btn primary">开始发送</button>
-        <button id="stop-btn" class="btn danger" disabled>停止</button>
+        <button id="save-campaign-btn" class="btn primary">💾 保存活动</button>
+        <button id="save-and-run-btn" class="btn success">🚀 保存并启动</button>
       </div>
-      <div id="send-log" class="log"></div>
     </section>
 
-    <!-- Templates Tab -->
-    <section id="templates-tab" class="tab-content">
-      <!-- Keywords Section -->
-      <div class="template-section">
-        <h3>🔑 关键词模板</h3>
-        <div class="template-form">
-          <input type="text" id="new-keyword-name" placeholder="模板名称">
-          <input type="text" id="new-keyword-value" placeholder="关键词 (多个用逗号分隔)">
-          <button id="add-keyword-btn" class="btn small primary">添加</button>
-        </div>
-        <div id="keyword-templates" class="template-list"></div>
+    <!-- Running Campaign Tab -->
+    <section id="running-tab" class="tab-content">
+      <div id="no-running" class="empty-state">
+        <p>当前没有运行中的活动</p>
+        <button id="go-campaigns-btn" class="btn small">查看活动列表</button>
       </div>
-
-      <!-- Messages Section -->
-      <div class="template-section">
-        <h3>💬 消息模板</h3>
-        <div class="template-form">
-          <input type="text" id="new-message-name" placeholder="模板名称">
-          <textarea id="new-message-value" placeholder="消息内容"></textarea>
-          <button id="add-message-btn" class="btn small primary">添加</button>
+      
+      <div id="running-panel" class="running-panel hidden">
+        <div class="running-header">
+          <h3 id="running-name">活动名称</h3>
+          <span id="running-status" class="status-badge">运行中</span>
         </div>
-        <div id="message-templates" class="template-list"></div>
-      </div>
-
-      <!-- Import/Export -->
-      <div class="template-section">
-        <h3>📦 导入/导出</h3>
-        <div class="import-export">
-          <button id="export-btn" class="btn small">导出模板</button>
-          <button id="import-btn" class="btn small">导入模板</button>
-          <input type="file" id="import-file" accept=".json" style="display:none">
+        
+        <div class="progress-section">
+          <div class="progress-bar">
+            <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+          </div>
+          <div class="progress-stats">
+            <span>搜索: <strong id="stat-searched">0</strong></span>
+            <span>加入: <strong id="stat-joined">0</strong></span>
+            <span>发送: <strong id="stat-sent">0</strong></span>
+            <span>失败: <strong id="stat-failed">0</strong></span>
+          </div>
         </div>
+
+        <div class="running-controls">
+          <button id="pause-btn" class="btn warning">⏸️ 暂停</button>
+          <button id="resume-btn" class="btn success hidden">▶️ 继续</button>
+          <button id="stop-btn" class="btn danger">⏹️ 停止</button>
+        </div>
+
+        <div id="running-log" class="log"></div>
       </div>
     </section>
   </div>
 
+  <!-- Campaign Detail Modal -->
+  <div id="campaign-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modal-title">活动详情</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div id="modal-body" class="modal-body"></div>
+      <div class="modal-footer">
+        <button id="modal-run-btn" class="btn success">🚀 启动</button>
+        <button id="modal-edit-btn" class="btn primary">✏️ 编辑</button>
+        <button id="modal-delete-btn" class="btn danger">🗑️ 删除</button>
+        <button class="modal-close btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <script src="updater.js"></script>
+  <script src="campaign.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
