@@ -22,10 +22,16 @@
       <button class="tab active" data-tab="search">🔍 搜群</button>
       <button class="tab" data-tab="groups">📋 群列表</button>
       <button class="tab" data-tab="message">💬 发消息</button>
+      <button class="tab" data-tab="templates">⚙️ 模板</button>
     </nav>
 
     <!-- Search Tab -->
     <section id="search-tab" class="tab-content active">
+      <div class="template-selector">
+        <select id="keyword-select">
+          <option value="">-- 选择关键词模板 --</option>
+        </select>
+      </div>
       <div class="input-group">
         <input type="text" id="keyword" placeholder="输入关键词搜索群组...">
         <button id="search-btn" class="btn primary">搜索</button>
@@ -44,6 +50,11 @@
 
     <!-- Message Tab -->
     <section id="message-tab" class="tab-content">
+      <div class="template-selector">
+        <select id="message-select">
+          <option value="">-- 选择消息模板 --</option>
+        </select>
+      </div>
       <div class="input-group">
         <textarea id="message-content" placeholder="输入要发送的消息内容..."></textarea>
       </div>
@@ -57,6 +68,41 @@
         <button id="stop-btn" class="btn danger" disabled>停止</button>
       </div>
       <div id="send-log" class="log"></div>
+    </section>
+
+    <!-- Templates Tab -->
+    <section id="templates-tab" class="tab-content">
+      <!-- Keywords Section -->
+      <div class="template-section">
+        <h3>🔑 关键词模板</h3>
+        <div class="template-form">
+          <input type="text" id="new-keyword-name" placeholder="模板名称">
+          <input type="text" id="new-keyword-value" placeholder="关键词 (多个用逗号分隔)">
+          <button id="add-keyword-btn" class="btn small primary">添加</button>
+        </div>
+        <div id="keyword-templates" class="template-list"></div>
+      </div>
+
+      <!-- Messages Section -->
+      <div class="template-section">
+        <h3>💬 消息模板</h3>
+        <div class="template-form">
+          <input type="text" id="new-message-name" placeholder="模板名称">
+          <textarea id="new-message-value" placeholder="消息内容"></textarea>
+          <button id="add-message-btn" class="btn small primary">添加</button>
+        </div>
+        <div id="message-templates" class="template-list"></div>
+      </div>
+
+      <!-- Import/Export -->
+      <div class="template-section">
+        <h3>📦 导入/导出</h3>
+        <div class="import-export">
+          <button id="export-btn" class="btn small">导出模板</button>
+          <button id="import-btn" class="btn small">导入模板</button>
+          <input type="file" id="import-file" accept=".json" style="display:none">
+        </div>
+      </div>
     </section>
   </div>
 

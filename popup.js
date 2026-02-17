@@ -3,6 +3,8 @@
 class TGGroupBot {
   constructor() {
     this.savedGroups = [];
+    this.keywordTemplates = [];
+    this.messageTemplates = [];
     this.isSending = false;
     this.currentTab = null;
     this.updater = new Updater();
@@ -14,10 +16,13 @@ class TGGroupBot {
     document.getElementById('version').textContent = `v${this.updater.currentVersion}`;
     
     await this.loadSavedGroups();
+    await this.loadTemplates();
     this.bindEvents();
     await this.checkConnection();
     this.updateGroupCount();
     this.renderSavedGroups();
+    this.renderTemplateSelectors();
+    this.renderTemplateList();
     
     // Check for updates in background
     this.checkForUpdates();
@@ -72,6 +77,36 @@ class TGGroupBot {
     // Message
     document.getElementById('send-btn').addEventListener('click', () => this.startSending());
     document.getElementById('stop-btn').addEventListener('click', () => this.stopSending());
+
+    // Template selectors
+    document.getElementById('keyword-select').addEventListener('change', (e) => {
+      if (e.target.value) {
+        const template = this.keywordTemplates.find(t => t.id === e.target.value);
+        if (template) {
+          document.getElementById('keyword').value = template.keywords[0] || '';
+        }
+      }
+    });
+
+    document.getElementById('message-select').addEventListener('change', (e) => {
+      if (e.target.value) {
+        const template = this.messageTemplates.find(t => t.id === e.target.value);
+        if (template) {
+          document.getElementById('message-content').value = template.content;
+        }
+      }
+    });
+
+    // Template management
+    document.getElementById('add-keyword-btn').addEventListener('click', () => this.addKeywordTemplate());
+    document.getElementById('add-message-btn').addEventListener('click', () => this.addMessageTemplate());
+    
+    // Import/Export
+    document.getElementById('export-btn').addEventListener('click', () => this.exportTemplates());
+    document.getElementById('import-btn').addEventListener('click', () => {
+      document.getElementById('import-file').click();
+    });
+    document.getElementById('import-file').addEventListener('change', (e) => this.importTemplates(e));
   }
 
   switchTab(tabName) {
@@ -435,6 +470,240 @@ class TGGroupBot {
   escapeAttr(text) {
     if (!text) return '';
     return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // =============== Template Management ===============
+
+  async loadTemplates() {
+    const data = await chrome.storage.local.get(['keywordTemplates', 'messageTemplates']);
+    this.keywordTemplates = data.keywordTemplates || [];
+    this.messageTemplates = data.messageTemplates || [];
+  }
+
+  async saveTemplates() {
+    await chrome.storage.local.set({
+      keywordTemplates: this.keywordTemplates,
+      messageTemplates: this.messageTemplates
+    });
+  }
+
+  renderTemplateSelectors() {
+    // Keyword selector
+    const keywordSelect = document.getElementById('keyword-select');
+    keywordSelect.innerHTML = '<option value="">-- 选择关键词模板 --</option>';
+    this.keywordTemplates.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = `${t.name} (${t.keywords.length}个关键词)`;
+      keywordSelect.appendChild(opt);
+    });
+
+    // Message selector
+    const messageSelect = document.getElementById('message-select');
+    messageSelect.innerHTML = '<option value="">-- 选择消息模板 --</option>';
+    this.messageTemplates.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.name;
+      messageSelect.appendChild(opt);
+    });
+  }
+
+  renderTemplateList() {
+    // Keyword templates list
+    const keywordListEl = document.getElementById('keyword-templates');
+    if (this.keywordTemplates.length === 0) {
+      keywordListEl.innerHTML = '<div class="empty" style="padding:10px;font-size:12px;">暂无关键词模板</div>';
+    } else {
+      keywordListEl.innerHTML = this.keywordTemplates.map(t => `
+        <div class="template-item" data-id="${t.id}">
+          <div class="template-info">
+            <div class="template-name">${this.escapeHtml(t.name)}</div>
+            <div class="template-preview">${this.escapeHtml(t.keywords.join(', '))}</div>
+          </div>
+          <div class="template-actions">
+            <button class="use" data-type="keyword" data-id="${t.id}">使用</button>
+            <button class="delete" data-type="keyword" data-id="${t.id}">删除</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Message templates list
+    const messageListEl = document.getElementById('message-templates');
+    if (this.messageTemplates.length === 0) {
+      messageListEl.innerHTML = '<div class="empty" style="padding:10px;font-size:12px;">暂无消息模板</div>';
+    } else {
+      messageListEl.innerHTML = this.messageTemplates.map(t => `
+        <div class="template-item" data-id="${t.id}">
+          <div class="template-info">
+            <div class="template-name">${this.escapeHtml(t.name)}</div>
+            <div class="template-preview">${this.escapeHtml(t.content.substring(0, 50))}${t.content.length > 50 ? '...' : ''}</div>
+          </div>
+          <div class="template-actions">
+            <button class="use" data-type="message" data-id="${t.id}">使用</button>
+            <button class="delete" data-type="message" data-id="${t.id}">删除</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Bind events
+    document.querySelectorAll('.template-actions .use').forEach(btn => {
+      btn.addEventListener('click', (e) => this.useTemplate(e.target.dataset.type, e.target.dataset.id));
+    });
+    document.querySelectorAll('.template-actions .delete').forEach(btn => {
+      btn.addEventListener('click', (e) => this.deleteTemplate(e.target.dataset.type, e.target.dataset.id));
+    });
+  }
+
+  async addKeywordTemplate() {
+    const nameEl = document.getElementById('new-keyword-name');
+    const valueEl = document.getElementById('new-keyword-value');
+    
+    const name = nameEl.value.trim();
+    const value = valueEl.value.trim();
+    
+    if (!name || !value) {
+      alert('请填写模板名称和关键词');
+      return;
+    }
+
+    const keywords = value.split(/[,，]/).map(k => k.trim()).filter(k => k);
+    
+    this.keywordTemplates.push({
+      id: Date.now().toString(),
+      name,
+      keywords,
+      createdAt: Date.now()
+    });
+
+    await this.saveTemplates();
+    this.renderTemplateSelectors();
+    this.renderTemplateList();
+
+    nameEl.value = '';
+    valueEl.value = '';
+  }
+
+  async addMessageTemplate() {
+    const nameEl = document.getElementById('new-message-name');
+    const valueEl = document.getElementById('new-message-value');
+    
+    const name = nameEl.value.trim();
+    const content = valueEl.value.trim();
+    
+    if (!name || !content) {
+      alert('请填写模板名称和消息内容');
+      return;
+    }
+
+    this.messageTemplates.push({
+      id: Date.now().toString(),
+      name,
+      content,
+      createdAt: Date.now()
+    });
+
+    await this.saveTemplates();
+    this.renderTemplateSelectors();
+    this.renderTemplateList();
+
+    nameEl.value = '';
+    valueEl.value = '';
+  }
+
+  useTemplate(type, id) {
+    if (type === 'keyword') {
+      const template = this.keywordTemplates.find(t => t.id === id);
+      if (template) {
+        document.getElementById('keyword').value = template.keywords[0] || '';
+        document.getElementById('keyword-select').value = id;
+        this.switchTab('search');
+      }
+    } else if (type === 'message') {
+      const template = this.messageTemplates.find(t => t.id === id);
+      if (template) {
+        document.getElementById('message-content').value = template.content;
+        document.getElementById('message-select').value = id;
+        this.switchTab('message');
+      }
+    }
+  }
+
+  async deleteTemplate(type, id) {
+    if (!confirm('确定删除此模板吗？')) return;
+
+    if (type === 'keyword') {
+      this.keywordTemplates = this.keywordTemplates.filter(t => t.id !== id);
+    } else if (type === 'message') {
+      this.messageTemplates = this.messageTemplates.filter(t => t.id !== id);
+    }
+
+    await this.saveTemplates();
+    this.renderTemplateSelectors();
+    this.renderTemplateList();
+  }
+
+  exportTemplates() {
+    const data = {
+      version: this.updater.currentVersion,
+      exportedAt: new Date().toISOString(),
+      keywordTemplates: this.keywordTemplates,
+      messageTemplates: this.messageTemplates
+    };
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tg-group-bot-templates-${Date.now()}.json`;
+    a.click();
+    
+    URL.revokeObjectURL(url);
+  }
+
+  async importTemplates(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      if (data.keywordTemplates) {
+        const count = data.keywordTemplates.length;
+        if (confirm(`导入 ${count} 个关键词模板？`)) {
+          // Generate new IDs to avoid conflicts
+          data.keywordTemplates.forEach(t => {
+            t.id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+          });
+          this.keywordTemplates.push(...data.keywordTemplates);
+        }
+      }
+
+      if (data.messageTemplates) {
+        const count = data.messageTemplates.length;
+        if (confirm(`导入 ${count} 个消息模板？`)) {
+          data.messageTemplates.forEach(t => {
+            t.id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+          });
+          this.messageTemplates.push(...data.messageTemplates);
+        }
+      }
+
+      await this.saveTemplates();
+      this.renderTemplateSelectors();
+      this.renderTemplateList();
+      
+      alert('导入成功！');
+    } catch (error) {
+      alert('导入失败: ' + error.message);
+    }
+
+    // Reset file input
+    e.target.value = '';
   }
 }
 

@@ -365,6 +365,142 @@ header h1 {
   60%, 100% { content: '...'; }
 }
 
+/* Template Selector */
+.template-selector {
+  margin-bottom: 12px;
+}
+
+.template-selector select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #252540;
+  color: #eee;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.template-selector select:focus {
+  outline: none;
+  border-color: #0088cc;
+}
+
+/* Template Section */
+.template-section {
+  margin-bottom: 20px;
+  padding: 12px;
+  background: #252540;
+  border-radius: 8px;
+}
+
+.template-section h3 {
+  font-size: 14px;
+  margin-bottom: 12px;
+  color: #aaa;
+}
+
+.template-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.template-form input,
+.template-form textarea {
+  padding: 8px 10px;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #1a1a2e;
+  color: #eee;
+  font-size: 13px;
+}
+
+.template-form textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+
+.template-form input:focus,
+.template-form textarea:focus {
+  outline: none;
+  border-color: #0088cc;
+}
+
+/* Template List */
+.template-list {
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.template-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: #1a1a2e;
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+
+.template-item .template-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.template-item .template-name {
+  font-weight: 500;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.template-item .template-preview {
+  font-size: 11px;
+  color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.template-item .template-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.template-item .template-actions button {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  background: #444;
+  color: #aaa;
+}
+
+.template-item .template-actions button:hover {
+  background: #555;
+}
+
+.template-item .template-actions button.delete {
+  background: #5a2d2d;
+  color: #ff6b6b;
+}
+
+.template-item .template-actions button.delete:hover {
+  background: #6a3d3d;
+}
+
+/* Import/Export */
+.import-export {
+  display: flex;
+  gap: 8px;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
