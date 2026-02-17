@@ -6,9 +6,10 @@ class CampaignManager {
     this.currentCampaign = null;
     this.isRunning = false;
     this.isPaused = false;
-    this.stats = { searched: 0, joined: 0, sent: 0, failed: 0 };
+    this.stats = { searched: 0, joined: 0, sent: 0, failed: 0, skipped: 0 };
     this.foundGroups = [];
     this.currentTab = null;
+    this.human = new HumanBehavior(); // 人类行为模拟器
   }
 
   // =============== Storage ===============
@@ -93,8 +94,9 @@ class CampaignManager {
     this.currentCampaign = campaign;
     this.isRunning = true;
     this.isPaused = false;
-    this.stats = { searched: 0, joined: 0, sent: 0, failed: 0 };
+    this.stats = { searched: 0, joined: 0, sent: 0, failed: 0, skipped: 0 };
     this.foundGroups = [];
+    this.human = new HumanBehavior(); // 重置人类行为模拟器
 
     campaign.status = 'running';
     campaign.lastRunAt = Date.now();
@@ -105,24 +107,35 @@ class CampaignManager {
     const updateStatus = (status) => callbacks.onStatusChange?.(status);
 
     try {
-      log('🚀 活动开始运行...');
+      log('🚀 活动开始运行 (智能防封模式)...');
+      log('🛡️ 已启用: 随机延迟、模拟人类行为、自动休息', 'warning');
       updateStatus('running');
 
-      // Phase 1: Search groups by keywords
+      // Phase 1: Search groups by keywords (随机顺序)
       log('📡 阶段1: 搜索群组...');
-      for (const keyword of campaign.keywords) {
+      const keywords = this.human.shuffle([...campaign.keywords]); // 打乱关键词顺序
+      
+      for (const keyword of keywords) {
         if (!this.isRunning) break;
         while (this.isPaused) {
           await this.sleep(500);
           if (!this.isRunning) break;
         }
 
+        // 检查是否需要休息
+        if (this.human.shouldTakeBreak()) {
+          const breakTime = await this.human.takeBreak();
+          log(`☕ 休息 ${this.human.formatDelay(breakTime)}...`, 'warning');
+        }
+
         log(`🔍 搜索关键词: ${keyword}`);
+        this.human.recordAction();
         
         try {
           const response = await chrome.tabs.sendMessage(this.currentTab.id, {
             action: 'search',
-            keyword: keyword
+            keyword: keyword,
+            humanMode: true // 通知 content script 使用人类模式
           });
 
           if (response?.results) {
@@ -141,8 +154,9 @@ class CampaignManager {
           log(`搜索失败: ${e.message}`, 'error');
         }
 
-        // Small delay between searches
-        await this.sleep(2000);
+        // 随机搜索延迟
+        const searchDelay = await this.human.searchDelay();
+        log(`⏳ 等待 ${this.human.formatDelay(searchDelay)}`, 'warning');
       }
 
       log(`📊 共找到 ${this.foundGroups.length} 个群组`);
@@ -151,21 +165,52 @@ class CampaignManager {
       if (campaign.settings.autoJoin && this.foundGroups.length > 0) {
         log('🚪 阶段2: 加入群组...');
         
-        const toJoin = this.foundGroups.slice(0, campaign.settings.maxGroups);
+        // 打乱顺序，并可能取子集
+        let toJoin = this.human.shuffleGroups(
+          this.foundGroups.slice(0, campaign.settings.maxGroups)
+        );
         
-        for (const group of toJoin) {
+        for (let i = 0; i < toJoin.length; i++) {
+          const group = toJoin[i];
+          
           if (!this.isRunning) break;
           while (this.isPaused) {
             await this.sleep(500);
             if (!this.isRunning) break;
           }
 
-          log(`加入: ${group.name}...`);
+          // 随机跳过一些群
+          if (this.human.shouldSkip()) {
+            log(`⏭️ 随机跳过: ${group.name}`, 'warning');
+            this.stats.skipped++;
+            updateStats();
+            continue;
+          }
+
+          // 检查是否需要休息
+          if (this.human.shouldTakeBreak()) {
+            const breakTime = await this.human.takeBreak();
+            log(`☕ 休息 ${this.human.formatDelay(breakTime)}...`, 'warning');
+          }
+
+          // 检查速率限制
+          if (this.human.isRateLimited()) {
+            log('⚠️ 操作过快，等待冷却...', 'warning');
+            const waitTime = await this.human.waitForRateLimit();
+            log(`继续，已等待 ${this.human.formatDelay(waitTime)}`);
+          }
+
+          log(`[${i + 1}/${toJoin.length}] 加入: ${group.name}...`);
+          this.human.recordAction();
           
           try {
+            // 点击前延迟
+            await this.human.preClickDelay();
+            
             const response = await chrome.tabs.sendMessage(this.currentTab.id, {
               action: 'joinGroup',
-              groupId: group.id
+              groupId: group.id,
+              humanMode: true
             });
 
             if (response?.success) {
@@ -180,7 +225,12 @@ class CampaignManager {
           }
           
           updateStats();
-          await this.sleep(3000); // Avoid rate limiting
+          
+          // 随机加入延迟
+          if (i < toJoin.length - 1) {
+            const joinDelay = await this.human.joinDelay();
+            log(`⏳ 等待 ${this.human.formatDelay(joinDelay)}`, 'warning');
+          }
         }
       }
 
@@ -189,26 +239,58 @@ class CampaignManager {
       if (joinedGroups.length > 0) {
         log(`💬 阶段3: 发送消息到 ${joinedGroups.length} 个群...`);
         
-        for (const group of joinedGroups) {
+        // 再次打乱发送顺序
+        const sendOrder = this.human.shuffleGroups(joinedGroups);
+        
+        for (let i = 0; i < sendOrder.length; i++) {
+          const group = sendOrder[i];
+          
           if (!this.isRunning) break;
           while (this.isPaused) {
             await this.sleep(500);
             if (!this.isRunning) break;
           }
 
-          log(`发送到: ${group.name}...`);
+          // 随机跳过
+          if (this.human.shouldSkip()) {
+            log(`⏭️ 随机跳过发送: ${group.name}`, 'warning');
+            this.stats.skipped++;
+            updateStats();
+            continue;
+          }
+
+          // 检查是否需要休息
+          if (this.human.shouldTakeBreak()) {
+            const breakTime = await this.human.takeBreak();
+            log(`☕ 长休息 ${this.human.formatDelay(breakTime)}...`, 'warning');
+          }
+
+          // 检查速率限制
+          if (this.human.isRateLimited()) {
+            log('⚠️ 发送过快，冷却中...', 'warning');
+            const waitTime = await this.human.waitForRateLimit();
+            log(`继续，已等待 ${this.human.formatDelay(waitTime)}`);
+          }
+
+          log(`[${i + 1}/${sendOrder.length}] 发送到: ${group.name}...`);
+          this.human.recordAction();
           
           try {
+            await this.human.preClickDelay();
+            
             // Send message (with image if available)
             const sendData = {
               action: 'sendMessage',
               groupId: group.id,
-              message: campaign.message
+              message: campaign.message,
+              humanMode: true // 启用人类打字模式
             };
 
             // If there are images, send them
             if (campaign.images && campaign.images.length > 0) {
-              sendData.image = campaign.images[0]; // Send first image
+              // 随机选择一张图片 (如果有多张)
+              const imgIndex = this.human.randomInt(0, campaign.images.length - 1);
+              sendData.image = campaign.images[imgIndex];
             }
 
             const response = await chrome.tabs.sendMessage(this.currentTab.id, sendData);
@@ -227,10 +309,10 @@ class CampaignManager {
           
           updateStats();
           
-          // Wait interval between messages
-          if (this.isRunning && joinedGroups.indexOf(group) < joinedGroups.length - 1) {
-            log(`等待 ${campaign.settings.interval} 秒...`, 'warning');
-            await this.sleep(campaign.settings.interval * 1000);
+          // 随机发送延迟 (最重要的防封措施)
+          if (i < sendOrder.length - 1) {
+            const sendDelay = await this.human.sendDelay();
+            log(`⏳ 智能等待 ${this.human.formatDelay(sendDelay)}`, 'warning');
           }
         }
       }
@@ -243,7 +325,7 @@ class CampaignManager {
         await this.save();
         
         log('🎉 活动运行完成！', 'success');
-        log(`统计: 搜索${this.stats.searched}次, 加入${this.stats.joined}群, 发送${this.stats.sent}条, 失败${this.stats.failed}条`);
+        log(`统计: 搜索${this.stats.searched}次, 加入${this.stats.joined}群, 发送${this.stats.sent}条, 跳过${this.stats.skipped}个, 失败${this.stats.failed}条`);
         updateStatus('completed');
       }
 

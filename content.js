@@ -1,7 +1,69 @@
-// TG Group Bot - Content Script
+// TG Marketing - Content Script
 // Injected into Telegram Web K to interact with the DOM
+// 支持人类行为模拟
 
-console.log('TG Group Bot content script loaded');
+console.log('TG Marketing content script loaded');
+
+// =============== 人类行为模拟 (Content Script 版) ===============
+
+const humanSim = {
+  // 随机整数
+  randomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  },
+  
+  // 随机延迟
+  async randomDelay(min, max) {
+    const delay = this.randomInt(min, max);
+    await sleep(delay);
+    return delay;
+  },
+  
+  // 模拟人类打字
+  async humanType(element, text) {
+    element.focus();
+    element.textContent = '';
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      
+      // 随机打字速度 (50-150ms)
+      await sleep(this.randomInt(50, 150));
+      
+      // 2% 概率打错字再删除
+      if (Math.random() < 0.02 && i < text.length - 1) {
+        const typo = String.fromCharCode(this.randomInt(97, 122));
+        element.textContent += typo;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(this.randomInt(200, 400));
+        element.textContent = element.textContent.slice(0, -1);
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(this.randomInt(100, 200));
+      }
+      
+      // 正常输入
+      element.textContent += char;
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+      
+      // 10% 概率停顿思考
+      if (Math.random() < 0.1) {
+        await sleep(this.randomInt(200, 800));
+      }
+    }
+  },
+  
+  // 模拟滚动
+  async humanScroll(element, distance = 300) {
+    const steps = this.randomInt(3, 6);
+    const stepDistance = distance / steps;
+    
+    for (let i = 0; i < steps; i++) {
+      element.scrollTop += stepDistance + this.randomInt(-20, 20);
+      await sleep(this.randomInt(50, 150));
+    }
+  }
+};
 
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -9,15 +71,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
   switch (request.action) {
     case 'search':
-      handleSearch(request.keyword).then(sendResponse);
+      handleSearch(request.keyword, request.humanMode).then(sendResponse);
       return true; // async response
       
     case 'joinGroup':
-      handleJoinGroup(request.groupId).then(sendResponse);
+      handleJoinGroup(request.groupId, request.humanMode).then(sendResponse);
       return true;
       
     case 'sendMessage':
-      handleSendMessage(request.groupId, request.message, request.image).then(sendResponse);
+      handleSendMessage(request.groupId, request.message, request.image, request.humanMode).then(sendResponse);
       return true;
       
     case 'getStatus':
@@ -30,7 +92,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // Search for groups using Telegram Web K's global search
-async function handleSearch(keyword) {
+async function handleSearch(keyword, humanMode = false) {
   try {
     // Find the search input in the left sidebar
     const searchInput = document.querySelector('.input-search input') ||
@@ -42,6 +104,7 @@ async function handleSearch(keyword) {
       const searchArea = document.querySelector('.LeftColumn .input-search') ||
                          document.querySelector('.search-input');
       if (searchArea) {
+        if (humanMode) await humanSim.randomDelay(100, 300);
         searchArea.click();
         await sleep(300);
       }
@@ -54,18 +117,24 @@ async function handleSearch(keyword) {
       return { error: 'Cannot find search input', results: [] };
     }
 
-    // Clear and type keyword
+    // Clear input
     input.focus();
+    if (humanMode) await humanSim.randomDelay(100, 200);
     input.value = '';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     await sleep(200);
     
-    // Type the keyword
-    input.value = keyword;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
+    // Type the keyword (human mode or instant)
+    if (humanMode) {
+      await humanSim.humanType(input, keyword);
+    } else {
+      input.value = keyword;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
     
-    // Wait for search results
-    await sleep(2000);
+    // Wait for search results (随机等待时间)
+    const waitTime = humanMode ? humanSim.randomInt(2000, 3500) : 2000;
+    await sleep(waitTime);
 
     // Parse global search results
     const results = parseGlobalSearchResults();
@@ -162,7 +231,7 @@ function parseGlobalSearchResults() {
 }
 
 // Join a group by clicking on it and then the join button
-async function handleJoinGroup(groupId) {
+async function handleJoinGroup(groupId, humanMode = false) {
   try {
     // Find the group element
     const groupEl = document.querySelector(`[data-peer-id="${groupId}"]`);
@@ -171,9 +240,24 @@ async function handleJoinGroup(groupId) {
       return { error: 'Group element not found', success: false };
     }
     
+    // 人类模式: 点击前延迟
+    if (humanMode) await humanSim.randomDelay(100, 300);
+    
     // Click to open the group
     groupEl.click();
-    await sleep(1500);
+    
+    // 人类模式: 等待更长时间 (模拟阅读群介绍)
+    await sleep(humanMode ? humanSim.randomInt(1500, 2500) : 1500);
+    
+    // 人类模式: 模拟滚动查看群信息
+    if (humanMode) {
+      const chatContainer = document.querySelector('.bubbles-inner') || 
+                           document.querySelector('.chat-content');
+      if (chatContainer) {
+        await humanSim.humanScroll(chatContainer, humanSim.randomInt(100, 300));
+        await humanSim.randomDelay(500, 1000);
+      }
+    }
     
     // Look for JOIN button
     const joinBtn = Array.from(document.querySelectorAll('button')).find(
@@ -181,8 +265,9 @@ async function handleJoinGroup(groupId) {
     );
     
     if (joinBtn) {
+      if (humanMode) await humanSim.randomDelay(200, 500);
       joinBtn.click();
-      await sleep(1000);
+      await sleep(humanMode ? humanSim.randomInt(800, 1200) : 1000);
       return { success: true, joined: true };
     }
     
@@ -196,14 +281,16 @@ async function handleJoinGroup(groupId) {
 }
 
 // Send message to the currently open chat (with optional image)
-async function handleSendMessage(groupId, message, imageBase64) {
+async function handleSendMessage(groupId, message, imageBase64, humanMode = false) {
   try {
     // If groupId provided, navigate to that chat first
     if (groupId) {
       const groupEl = document.querySelector(`[data-peer-id="${groupId}"]`);
       if (groupEl) {
+        if (humanMode) await humanSim.randomDelay(100, 300);
         groupEl.click();
-        await sleep(1500);
+        // 人类模式等待更长时间 (模拟阅读群信息)
+        await sleep(humanMode ? humanSim.randomInt(1500, 2500) : 1500);
       }
     }
 
@@ -219,23 +306,29 @@ async function handleSendMessage(groupId, message, imageBase64) {
     // If we have an image, paste it first
     if (imageBase64) {
       try {
+        if (humanMode) await humanSim.randomDelay(300, 600);
         await pasteImage(imageBase64, messageInput);
-        await sleep(1000);
+        await sleep(humanMode ? humanSim.randomInt(1000, 1500) : 1000);
       } catch (imgError) {
         console.error('Image paste failed:', imgError);
         // Continue without image
       }
     }
 
-    // Focus and set the message content
+    // Focus input
     messageInput.focus();
-    await sleep(100);
+    if (humanMode) await humanSim.randomDelay(100, 200);
     
-    // Set the message content
-    messageInput.textContent = message;
-    messageInput.dispatchEvent(new Event('input', { bubbles: true }));
-    
-    await sleep(300);
+    // Type the message (human mode or instant)
+    if (humanMode) {
+      await humanSim.humanType(messageInput, message);
+      // 打完字后稍微等一下再发送 (模拟检查内容)
+      await humanSim.randomDelay(300, 800);
+    } else {
+      messageInput.textContent = message;
+      messageInput.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(300);
+    }
 
     // Find and click send button
     const sendBtn = document.querySelector('.btn-send') ||
@@ -247,15 +340,17 @@ async function handleSendMessage(groupId, message, imageBase64) {
                     );
     
     if (sendBtn) {
+      if (humanMode) await humanSim.randomDelay(100, 250);
       sendBtn.click();
-      await sleep(1000);
+      await sleep(humanMode ? humanSim.randomInt(800, 1200) : 1000);
       
       // If image was attached, there might be a popup, click send again
       const popupSendBtn = document.querySelector('.popup-send-photo .btn-primary') ||
                            document.querySelector('.popup button.btn-primary');
       if (popupSendBtn) {
+        if (humanMode) await humanSim.randomDelay(200, 400);
         popupSendBtn.click();
-        await sleep(500);
+        await sleep(humanMode ? humanSim.randomInt(400, 700) : 500);
       }
       
       return { success: true };
@@ -270,7 +365,7 @@ async function handleSendMessage(groupId, message, imageBase64) {
       bubbles: true
     }));
     
-    await sleep(500);
+    await sleep(humanMode ? humanSim.randomInt(400, 700) : 500);
     return { success: true, method: 'enter' };
     
   } catch (error) {

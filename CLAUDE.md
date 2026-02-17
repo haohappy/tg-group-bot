@@ -300,10 +300,71 @@ targetElement.dispatchEvent(pasteEvent);
 
 ---
 
+## 🛡️ 智能防封策略 (v2.1.0)
+
+### human-behavior.js
+
+专门的人类行为模拟模块，包含：
+
+#### 随机延迟
+```javascript
+// 发送间隔: 45-90秒 + 随机偏移 ±20%
+sendDelay: { min: 45000, max: 90000 }
+
+// 15% 概率额外长停顿 (10-30秒)
+if (this.chance(0.15)) {
+  delay += this.randomInt(10000, 30000);
+}
+```
+
+#### 模拟打字
+```javascript
+// 打字速度: 50-150ms/字符
+// 2% 概率打错字再删除
+// 10% 概率停顿思考
+await humanSim.humanType(input, text);
+```
+
+#### 会话管理
+```javascript
+// 每 5-10 个操作后休息 30秒-2分钟
+actionsBeforeBreak: { min: 5, max: 10 }
+breakDuration: { min: 30000, max: 120000 }
+
+// 每小时最多 30 次操作
+maxActionsPerHour: 30
+```
+
+#### 随机行为
+```javascript
+// 打乱群组处理顺序
+this.human.shuffleGroups(groups)
+
+// 10% 概率随机跳过某个群
+this.human.shouldSkip()
+
+// 模拟滚动查看内容
+await humanSim.humanScroll(element, distance)
+```
+
+### 防封效果
+
+| 策略 | 说明 |
+|------|------|
+| 随机延迟 | 避免固定间隔被检测 |
+| 模拟打字 | 不是瞬间输入，有打字节奏 |
+| 打错字重打 | 更像真人 |
+| 随机跳过 | 不是 100% 执行所有操作 |
+| 打乱顺序 | 不按固定顺序处理 |
+| 自动休息 | 避免长时间连续操作 |
+| 速率限制 | 超过阈值自动等待 |
+
+---
+
 ## 📋 TODO / 未来改进
 
 - [ ] 支持多账号切换
-- [ ] 更智能的防封策略 (随机间隔、模拟人类行为)
+- [x] ~~更智能的防封策略 (随机间隔、模拟人类行为)~~ ✅ v2.1.0
 - [ ] 群组黑名单 (避免重复发送)
 - [ ] 发送结果统计报表
 - [ ] 定时任务 (OpenClaw cron)
