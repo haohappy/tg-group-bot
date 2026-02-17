@@ -5,15 +5,53 @@ class TGGroupBot {
     this.savedGroups = [];
     this.isSending = false;
     this.currentTab = null;
+    this.updater = new Updater();
     this.init();
   }
 
   async init() {
+    // Show current version
+    document.getElementById('version').textContent = `v${this.updater.currentVersion}`;
+    
     await this.loadSavedGroups();
     this.bindEvents();
     await this.checkConnection();
     this.updateGroupCount();
     this.renderSavedGroups();
+    
+    // Check for updates in background
+    this.checkForUpdates();
+  }
+  
+  async checkForUpdates() {
+    try {
+      const result = await this.updater.checkForUpdates();
+      
+      if (result.hasUpdate) {
+        const banner = document.getElementById('update-banner');
+        const newVersionEl = document.getElementById('new-version');
+        const updateBtn = document.getElementById('update-btn');
+        
+        newVersionEl.textContent = result.latestVersion;
+        banner.classList.remove('hidden');
+        
+        updateBtn.addEventListener('click', async () => {
+          updateBtn.textContent = '下载中...';
+          updateBtn.disabled = true;
+          
+          await this.updater.downloadUpdate(result.downloadUrl);
+          
+          updateBtn.textContent = '已下载';
+          
+          // Show install instructions
+          alert('下载完成！\\n\\n安装步骤：\\n1. 解压下载的 zip 文件\\n2. 覆盖原插件目录\\n3. 在 chrome://extensions 点击刷新按钮\\n4. 刷新 Telegram Web 页面');
+          
+          await this.updater.markAsInstalled();
+        });
+      }
+    } catch (e) {
+      console.log('Update check skipped:', e);
+    }
   }
 
   bindEvents() {

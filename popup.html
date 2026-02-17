@@ -9,8 +9,12 @@
 <body>
   <div class="container">
     <header>
-      <h1>🤖 TG Group Bot</h1>
+      <h1>🤖 TG Group Bot <span id="version" class="version"></span></h1>
       <div id="status" class="status">检查连接中...</div>
+      <div id="update-banner" class="update-banner hidden">
+        <span>🎉 新版本可用: <strong id="new-version"></strong></span>
+        <button id="update-btn" class="btn small">下载更新</button>
+      </div>
     </header>
 
     <!-- Tab Navigation -->
@@ -56,6 +60,7 @@
     </section>
   </div>
 
+  <script src="updater.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
