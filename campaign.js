@@ -163,11 +163,21 @@ class CampaignManager {
 
       // Phase 2: Join groups (if autoJoin enabled)
       if (campaign.settings.autoJoin && this.foundGroups.length > 0) {
-        log('🚪 阶段2: 加入群组...');
+        log('🚪 阶段2: 智能加入群组...');
+        log('🔍 会自动跳过: 频道、需要审批的群、不能发消息的群', 'warning');
+        
+        // ===== 预过滤: 只保留可能可以发送的群组 =====
+        const likelySendable = this.foundGroups.filter(g => g.likelySendable || g.isGroup);
+        const channelsSkipped = this.foundGroups.length - likelySendable.length;
+        if (channelsSkipped > 0) {
+          log(`📢 已跳过 ${channelsSkipped} 个频道 (只能管理员发消息)`, 'warning');
+          this.stats.skipped += channelsSkipped;
+          updateStats();
+        }
         
         // 打乱顺序，并可能取子集
         let toJoin = this.human.shuffleGroups(
-          this.foundGroups.slice(0, campaign.settings.maxGroups)
+          likelySendable.slice(0, campaign.settings.maxGroups)
         );
         
         for (let i = 0; i < toJoin.length; i++) {
@@ -213,15 +223,33 @@ class CampaignManager {
               humanMode: true
             });
 
-            if (response?.success) {
-              group.joined = true;
-              this.stats.joined++;
-              log(`✓ 已加入: ${group.name}`, 'success');
+            // ===== 智能检测处理 =====
+            if (response?.skip) {
+              // 自动跳过: Channel、需要审批、不能发消息
+              log(`⏭️ 自动跳过: ${group.name} (${response.reason})`, 'warning');
+              group.skipped = true;
+              group.skipReason = response.reason;
+              this.stats.skipped++;
+            } else if (response?.success) {
+              if (response.canSend !== false) {
+                group.joined = true;
+                group.canSend = true;
+                this.stats.joined++;
+                log(`✓ 已加入: ${group.name}`, 'success');
+              } else {
+                // 加入了但不能发消息
+                log(`⚠️ 已加入但不能发消息: ${group.name}`, 'warning');
+                group.joined = true;
+                group.canSend = false;
+                this.stats.skipped++;
+              }
             } else {
-              log(`✗ 加入失败: ${group.name}`, 'error');
+              log(`✗ 加入失败: ${group.name} - ${response?.error || '未知错误'}`, 'error');
+              this.stats.failed++;
             }
           } catch (e) {
             log(`✗ 加入出错: ${e.message}`, 'error');
+            this.stats.failed++;
           }
           
           updateStats();
@@ -235,12 +263,19 @@ class CampaignManager {
       }
 
       // Phase 3: Send messages
-      const joinedGroups = this.foundGroups.filter(g => g.joined);
-      if (joinedGroups.length > 0) {
-        log(`💬 阶段3: 发送消息到 ${joinedGroups.length} 个群...`);
+      // ===== 只发送到可以发消息的群 =====
+      const sendableGroups = this.foundGroups.filter(g => g.joined && g.canSend !== false && !g.skipped);
+      const notSendable = this.foundGroups.filter(g => g.joined).length - sendableGroups.length;
+      
+      if (notSendable > 0) {
+        log(`⚠️ ${notSendable} 个已加入的群不能发消息，已跳过`, 'warning');
+      }
+      
+      if (sendableGroups.length > 0) {
+        log(`💬 阶段3: 发送消息到 ${sendableGroups.length} 个群...`);
         
         // 再次打乱发送顺序
-        const sendOrder = this.human.shuffleGroups(joinedGroups);
+        const sendOrder = this.human.shuffleGroups(sendableGroups);
         
         for (let i = 0; i < sendOrder.length; i++) {
           const group = sendOrder[i];
@@ -295,12 +330,18 @@ class CampaignManager {
 
             const response = await chrome.tabs.sendMessage(this.currentTab.id, sendData);
 
-            if (response?.success) {
+            // ===== 处理发送响应 =====
+            if (response?.skip) {
+              // 发送时检测到不能发送
+              log(`⏭️ 自动跳过: ${group.name} (${response.error || response.reason})`, 'warning');
+              this.stats.skipped++;
+              group.canSend = false;
+            } else if (response?.success) {
               this.stats.sent++;
               log(`✓ 发送成功: ${group.name}`, 'success');
             } else {
               this.stats.failed++;
-              log(`✗ 发送失败: ${group.name} - ${response?.error}`, 'error');
+              log(`✗ 发送失败: ${group.name} - ${response?.error || '未知错误'}`, 'error');
             }
           } catch (e) {
             this.stats.failed++;
@@ -315,6 +356,8 @@ class CampaignManager {
             log(`⏳ 智能等待 ${this.human.formatDelay(sendDelay)}`, 'warning');
           }
         }
+      } else {
+        log('⚠️ 没有可以发送消息的群组', 'warning');
       }
 
       // Complete

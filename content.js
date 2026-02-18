@@ -82,8 +82,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       handleSendMessage(request.groupId, request.message, request.image, request.humanMode).then(sendResponse);
       return true;
       
+    case 'detectChat':
+      // 新增: 检测当前聊天类型
+      handleDetectChat().then(sendResponse);
+      return true;
+      
     case 'getStatus':
       sendResponse({ connected: true, url: window.location.href });
+      return false;
+      
+    case 'getChatInfo':
+      // 新增: 快速获取聊天信息
+      const detection = groupDetector.detectChatType();
+      sendResponse({ connected: true, ...detection });
       return false;
       
     default:
@@ -146,6 +157,135 @@ async function handleSearch(keyword, humanMode = false) {
   }
 }
 
+// =============== 群组类型识别 ===============
+
+const groupDetector = {
+  // 识别当前打开的聊天类型
+  detectChatType() {
+    const result = {
+      type: 'unknown',      // 'channel' | 'group' | 'private' | 'bot' | 'unknown'
+      canSend: false,       // 是否可以发消息
+      needsApproval: false, // 是否需要审批
+      isMember: false,      // 是否已加入
+      memberCount: 0,
+      title: '',
+      reason: ''
+    };
+    
+    // 获取标题
+    const titleEl = document.querySelector('.chat-info .peer-title') ||
+                    document.querySelector('.TopicHeader .title') ||
+                    document.querySelector('.ChatInfo .title');
+    result.title = titleEl?.textContent?.trim() || '';
+    
+    // 获取成员/订阅数
+    const subtitleEl = document.querySelector('.chat-info .info') ||
+                       document.querySelector('.ChatInfo .status') ||
+                       document.querySelector('.chat-subtitle');
+    const subtitle = subtitleEl?.textContent?.trim() || '';
+    
+    // 解析成员数
+    const memberMatch = subtitle.match(/([\d\s]+)\s*(members?|subscribers?|成员|订阅)/i);
+    if (memberMatch) {
+      result.memberCount = parseInt(memberMatch[1].replace(/\s/g, ''), 10);
+    }
+    
+    // 判断类型: Channel vs Group
+    if (subtitle.toLowerCase().includes('subscriber') || subtitle.includes('订阅')) {
+      result.type = 'channel';
+      result.reason = 'Has subscribers (channel)';
+    } else if (subtitle.toLowerCase().includes('member') || subtitle.includes('成员')) {
+      result.type = 'group';
+      result.reason = 'Has members (group)';
+    }
+    
+    // 检查各种按钮状态
+    const buttons = Array.from(document.querySelectorAll('button'));
+    const buttonTexts = buttons.map(b => b.textContent?.trim().toUpperCase());
+    
+    // JOIN 按钮 = 未加入
+    if (buttonTexts.includes('JOIN')) {
+      result.isMember = false;
+      result.canSend = false;
+      result.reason += ' | Not joined yet';
+    }
+    
+    // APPLY TO JOIN GROUP = 需要审批
+    if (buttonTexts.some(t => t.includes('APPLY') || t.includes('REQUEST'))) {
+      result.needsApproval = true;
+      result.isMember = false;
+      result.canSend = false;
+      result.reason += ' | Needs approval';
+    }
+    
+    // 检查消息输入框
+    const messageInput = document.querySelector('.input-message-input') ||
+                         document.querySelector('[contenteditable="true"].input-field-input');
+    const inputDisabled = messageInput?.getAttribute('contenteditable') === 'false' ||
+                          messageInput?.closest('.is-locked');
+    
+    if (messageInput && !inputDisabled) {
+      // 检查是否有 "You can't send messages" 提示
+      const chatBottom = document.querySelector('.chat-input') || 
+                         document.querySelector('.composer');
+      const bottomText = chatBottom?.textContent?.toLowerCase() || '';
+      
+      if (bottomText.includes("can't send") || 
+          bottomText.includes('cannot send') ||
+          bottomText.includes('不能发送') ||
+          bottomText.includes('broadcast')) {
+        result.canSend = false;
+        result.reason += ' | Sending disabled';
+      } else {
+        result.canSend = true;
+        result.isMember = true;
+        result.reason += ' | Can send messages';
+      }
+    } else {
+      // 没有输入框或被禁用
+      result.canSend = false;
+      result.reason += ' | No input or disabled';
+    }
+    
+    // Channel 通常不能发消息(除非是管理员)
+    if (result.type === 'channel' && !buttonTexts.includes('JOIN')) {
+      // 已加入的 channel, 检查是否能发
+      const hasInput = !!messageInput && !inputDisabled;
+      result.canSend = hasInput;
+      result.isMember = true;
+    }
+    
+    return result;
+  },
+  
+  // 快速检查: 当前聊天是否可以发消息
+  canSendMessage() {
+    const detection = this.detectChatType();
+    return detection.canSend;
+  },
+  
+  // 快速检查: 是否是需要跳过的类型
+  shouldSkip() {
+    const detection = this.detectChatType();
+    
+    // 跳过条件:
+    // 1. Channel (只有管理员能发)
+    // 2. 需要审批的群
+    // 3. 不能发消息的
+    if (detection.type === 'channel') {
+      return { skip: true, reason: 'Channel - only admins can post' };
+    }
+    if (detection.needsApproval) {
+      return { skip: true, reason: 'Requires admin approval to join' };
+    }
+    if (!detection.canSend && detection.isMember) {
+      return { skip: true, reason: 'Cannot send messages (restricted)' };
+    }
+    
+    return { skip: false, detection };
+  }
+};
+
 // Parse global search results from Telegram Web K
 function parseGlobalSearchResults() {
   const results = [];
@@ -197,12 +337,18 @@ function parseGlobalSearchResults() {
       
       const subtitle = subtitleEl?.textContent?.trim() || '';
       
-      // Check if it's a group or channel (has members/subscribers)
-      const isGroupOrChannel = subtitle.includes('member') || 
-                               subtitle.includes('subscriber') ||
-                               subtitle.includes('成员') ||
-                               subtitle.includes('订阅') ||
-                               name.startsWith('@');
+      // ===== 智能识别类型 =====
+      const isChannel = subtitle.toLowerCase().includes('subscriber') || 
+                        subtitle.includes('订阅');
+      const isGroup = subtitle.toLowerCase().includes('member') || 
+                      subtitle.includes('成员');
+      
+      // 解析成员数量
+      let memberCount = 0;
+      const countMatch = subtitle.match(/([\d\s,]+)\s*(members?|subscribers?)/i);
+      if (countMatch) {
+        memberCount = parseInt(countMatch[1].replace(/[\s,]/g, ''), 10);
+      }
       
       // Extract username if present
       let username = '';
@@ -216,8 +362,11 @@ function parseGlobalSearchResults() {
         name: name,
         username: username,
         members: subtitle,
-        isGroup: subtitle.includes('member'),
-        isChannel: subtitle.includes('subscriber'),
+        memberCount: memberCount,
+        isGroup: isGroup,
+        isChannel: isChannel,
+        // 新增: 可发送评估 (预估, 进入后再确认)
+        likelySendable: isGroup && !isChannel,
         element: item // Keep reference for clicking
       });
       
@@ -231,6 +380,7 @@ function parseGlobalSearchResults() {
 }
 
 // Join a group by clicking on it and then the join button
+// 智能版: 检测类型，自动跳过不能发消息的
 async function handleJoinGroup(groupId, humanMode = false) {
   try {
     // Find the group element
@@ -249,6 +399,20 @@ async function handleJoinGroup(groupId, humanMode = false) {
     // 人类模式: 等待更长时间 (模拟阅读群介绍)
     await sleep(humanMode ? humanSim.randomInt(1500, 2500) : 1500);
     
+    // ===== 检测聊天类型 =====
+    const detection = groupDetector.detectChatType();
+    console.log('Chat detection:', detection);
+    
+    // 检查是否应该跳过
+    if (detection.type === 'channel') {
+      return { 
+        success: false, 
+        skip: true, 
+        reason: 'Channel - only admins can post',
+        detection 
+      };
+    }
+    
     // 人类模式: 模拟滚动查看群信息
     if (humanMode) {
       const chatContainer = document.querySelector('.bubbles-inner') || 
@@ -259,8 +423,27 @@ async function handleJoinGroup(groupId, humanMode = false) {
       }
     }
     
+    // 检查按钮
+    const buttons = Array.from(document.querySelectorAll('button'));
+    
+    // 检查是否需要审批
+    const applyBtn = buttons.find(
+      btn => btn.textContent?.toUpperCase().includes('APPLY') ||
+             btn.textContent?.toUpperCase().includes('REQUEST')
+    );
+    
+    if (applyBtn) {
+      return { 
+        success: false, 
+        skip: true, 
+        reason: 'Requires admin approval to join',
+        needsApproval: true,
+        detection 
+      };
+    }
+    
     // Look for JOIN button
-    const joinBtn = Array.from(document.querySelectorAll('button')).find(
+    const joinBtn = buttons.find(
       btn => btn.textContent?.trim().toUpperCase() === 'JOIN'
     );
     
@@ -268,11 +451,38 @@ async function handleJoinGroup(groupId, humanMode = false) {
       if (humanMode) await humanSim.randomDelay(200, 500);
       joinBtn.click();
       await sleep(humanMode ? humanSim.randomInt(800, 1200) : 1000);
-      return { success: true, joined: true };
+      
+      // 加入后再次检测
+      const afterJoin = groupDetector.detectChatType();
+      return { 
+        success: true, 
+        joined: true, 
+        canSend: afterJoin.canSend,
+        detection: afterJoin 
+      };
     }
     
-    // No join button means we might already be a member or it's a private group
-    return { success: true, joined: false, message: 'Already joined or private group' };
+    // No join button - might already be a member
+    // 检查是否能发消息
+    const canSend = groupDetector.canSendMessage();
+    
+    if (!canSend) {
+      return { 
+        success: true, 
+        joined: false, 
+        skip: true,
+        reason: 'Cannot send messages (might be restricted)',
+        detection 
+      };
+    }
+    
+    return { 
+      success: true, 
+      joined: false, 
+      canSend: true,
+      message: 'Already a member',
+      detection 
+    };
     
   } catch (error) {
     console.error('Join error:', error);
@@ -280,7 +490,25 @@ async function handleJoinGroup(groupId, humanMode = false) {
   }
 }
 
+// 新增: 检测当前聊天类型 (供 popup 调用)
+async function handleDetectChat() {
+  try {
+    const detection = groupDetector.detectChatType();
+    const shouldSkip = groupDetector.shouldSkip();
+    return {
+      success: true,
+      ...detection,
+      shouldSkip: shouldSkip.skip,
+      skipReason: shouldSkip.reason
+    };
+  } catch (error) {
+    console.error('Detect error:', error);
+    return { error: error.message, success: false };
+  }
+}
+
 // Send message to the currently open chat (with optional image)
+// 智能版: 先检测是否能发送
 async function handleSendMessage(groupId, message, imageBase64, humanMode = false) {
   try {
     // If groupId provided, navigate to that chat first
@@ -293,6 +521,36 @@ async function handleSendMessage(groupId, message, imageBase64, humanMode = fals
         await sleep(humanMode ? humanSim.randomInt(1500, 2500) : 1500);
       }
     }
+    
+    // ===== 预检查: 是否能发送消息 =====
+    const detection = groupDetector.detectChatType();
+    console.log('Pre-send detection:', detection);
+    
+    if (detection.type === 'channel') {
+      return { 
+        error: 'Cannot send - this is a channel (only admins can post)', 
+        success: false,
+        skip: true,
+        detection 
+      };
+    }
+    
+    if (detection.needsApproval) {
+      return { 
+        error: 'Cannot send - need to join first (requires approval)', 
+        success: false,
+        skip: true,
+        detection 
+      };
+    }
+    
+    if (!detection.isMember) {
+      return { 
+        error: 'Cannot send - not a member of this chat', 
+        success: false,
+        detection 
+      };
+    }
 
     // Find the message input (contenteditable div in Telegram Web K)
     const messageInput = document.querySelector('.input-message-input') ||
@@ -300,7 +558,16 @@ async function handleSendMessage(groupId, message, imageBase64, humanMode = fals
                          document.querySelector('[data-placeholder="Message"]');
     
     if (!messageInput) {
-      return { error: 'Cannot find message input', success: false };
+      return { error: 'Cannot find message input', success: false, detection };
+    }
+    
+    // 再次检查 input 是否可用
+    if (messageInput.getAttribute('contenteditable') === 'false') {
+      return { 
+        error: 'Message input is disabled', 
+        success: false,
+        detection 
+      };
     }
 
     // If we have an image, paste it first
