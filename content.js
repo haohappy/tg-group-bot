@@ -241,6 +241,22 @@ const groupDetector = {
         result.isMember = true;
         result.reason += ' | Can send messages';
       }
+      
+      // ===== 检测 Telegram Stars 付费消息 =====
+      // 付费群显示 "Message for ⭐X" 或类似文字
+      const inputPlaceholder = messageInput.getAttribute('data-placeholder') || '';
+      const inputArea = document.querySelector('.chat-input-main, .composer-wrapper');
+      const inputAreaText = inputArea?.textContent || '';
+      
+      if (inputPlaceholder.includes('⭐') || 
+          inputPlaceholder.includes('star') ||
+          inputAreaText.includes('Message for') && inputAreaText.includes('⭐') ||
+          inputAreaText.match(/for\s*⭐?\s*\d+/i) ||
+          bottomText.includes('star') && bottomText.match(/\d+/)) {
+        result.canSend = false;
+        result.requiresStars = true;
+        result.reason += ' | Requires Telegram Stars (paid)';
+      }
     } else {
       // 没有输入框或被禁用
       result.canSend = false;
@@ -272,11 +288,15 @@ const groupDetector = {
     // 1. Channel (只有管理员能发)
     // 2. 需要审批的群
     // 3. 不能发消息的
+    // 4. 需要 Telegram Stars 付费的群
     if (detection.type === 'channel') {
       return { skip: true, reason: 'Channel - only admins can post' };
     }
     if (detection.needsApproval) {
       return { skip: true, reason: 'Requires admin approval to join' };
+    }
+    if (detection.requiresStars) {
+      return { skip: true, reason: 'Requires Telegram Stars (paid messaging)' };
     }
     if (!detection.canSend && detection.isMember) {
       return { skip: true, reason: 'Cannot send messages (restricted)' };
@@ -409,6 +429,16 @@ async function handleJoinGroup(groupId, humanMode = false) {
         success: false, 
         skip: true, 
         reason: 'Channel - only admins can post',
+        detection 
+      };
+    }
+    
+    // 检查是否需要 Telegram Stars
+    if (detection.requiresStars) {
+      return { 
+        success: false, 
+        skip: true, 
+        reason: 'Requires Telegram Stars (paid messaging)',
         detection 
       };
     }
